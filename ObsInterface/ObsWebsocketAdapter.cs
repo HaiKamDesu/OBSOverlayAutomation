@@ -27,8 +27,50 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
     public Task ConnectAsync(string url, string password, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _client.ConnectAsync(url, password);
-        return Task.CompletedTask;
+
+        if (_client.IsConnected)
+            return Task.CompletedTask;
+
+        return ConnectAndAwaitAsync(url, password, cancellationToken);
+    }
+
+    private async Task ConnectAndAwaitAsync(string url, string password, CancellationToken cancellationToken)
+    {
+        var connectedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnConnected(object? _, EventArgs __) => connectedTcs.TrySetResult();
+        void OnDisconnected(object? _, EventArgs __)
+            => connectedTcs.TrySetException(new InvalidOperationException("OBS disconnected before connection completed."));
+
+        Connected += OnConnected;
+        Disconnected += OnDisconnected;
+        using var cancellationRegistration = cancellationToken.Register(() => connectedTcs.TrySetCanceled(cancellationToken));
+
+        try
+        {
+            _client.ConnectAsync(url, password);
+            await connectedTcs.Task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (_client.IsConnected)
+            {
+                _client.Disconnect();
+            }
+
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to connect to OBS websocket at {Url}.", url);
+            Error?.Invoke(this, ex);
+            throw;
+        }
+        finally
+        {
+            Connected -= OnConnected;
+            Disconnected -= OnDisconnected;
+        }
     }
 
     public Task DisconnectAsync(CancellationToken cancellationToken = default)

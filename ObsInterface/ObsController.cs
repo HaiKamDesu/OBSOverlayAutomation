@@ -123,9 +123,14 @@ public sealed class ObsController
 
     public void InvalidateCache()
     {
-        lock (_inputs)
+        _gate.Wait();
+        try
         {
             _inputs.Clear();
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
