@@ -1,3 +1,6 @@
+using System.Collections;
+using System.Globalization;
+using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using OBSWebsocketDotNet;
@@ -8,6 +11,7 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
 {
     private readonly OBSWebsocket _client;
     private readonly ILogger<ObsWebsocketAdapter> _logger;
+    private readonly SemaphoreSlim _connectGate = new(1, 1);
 
     public ObsWebsocketAdapter(OBSWebsocket? client = null, ILogger<ObsWebsocketAdapter>? logger = null)
     {
@@ -24,11 +28,62 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
 
     public bool IsConnected => _client.IsConnected;
 
-    public Task ConnectAsync(string url, string password, CancellationToken cancellationToken = default)
+    public async Task ConnectAsync(string url, string password, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _client.ConnectAsync(url, password);
-        return Task.CompletedTask;
+
+        await _connectGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_client.IsConnected)
+                return;
+
+            await ConnectAndAwaitAsync(url, password, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _connectGate.Release();
+        }
+    }
+
+    private async Task ConnectAndAwaitAsync(string url, string password, CancellationToken cancellationToken)
+    {
+        TaskCompletionSource connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnConnected(object? _, EventArgs __) => connectedTcs.TrySetResult();
+        void OnDisconnected(object? _, EventArgs __)
+            => connectedTcs.TrySetException(new InvalidOperationException("OBS disconnected before connection completed."));
+
+        Connected += OnConnected;
+        Disconnected += OnDisconnected;
+        CancellationTokenRegistration cancellationRegistration = cancellationToken.Register(() => connectedTcs.TrySetCanceled(cancellationToken));
+
+        try
+        {
+            _client.ConnectAsync(url, password);
+            await connectedTcs.Task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (_client.IsConnected)
+            {
+                _client.Disconnect();
+            }
+
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to connect to OBS websocket at {Url}.", url);
+            Error?.Invoke(this, ex);
+            throw;
+        }
+        finally
+        {
+            cancellationRegistration.Dispose();
+            Connected -= OnConnected;
+            Disconnected -= OnDisconnected;
+        }
     }
 
     public Task DisconnectAsync(CancellationToken cancellationToken = default)
@@ -43,11 +98,15 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
         cancellationToken.ThrowIfCancellationRequested();
         return Task.Run<IReadOnlyList<ObsInputInfo>>(() =>
         {
-            dynamic inputs = _client.GetInputList();
-            var result = new List<ObsInputInfo>();
-            foreach (var input in inputs)
+            object response = _client.GetInputList();
+            IReadOnlyList<object> inputEntries = ExtractEntries(response, "Inputs");
+            List<ObsInputInfo> result = new(inputEntries.Count);
+
+            foreach (object input in inputEntries)
             {
-                result.Add(new ObsInputInfo((string)input.InputName, (string)input.InputKind));
+                string inputName = GetRequiredStringProperty(input, "InputName", "Name");
+                string inputKind = GetRequiredStringProperty(input, "InputKind", "Kind");
+                result.Add(new ObsInputInfo(inputName, inputKind));
             }
 
             return result;
@@ -59,8 +118,9 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
         cancellationToken.ThrowIfCancellationRequested();
         return Task.Run(() =>
         {
-            dynamic response = _client.GetInputSettings(inputName);
-            return (JObject)response.InputSettings;
+            object response = _client.GetInputSettings(inputName);
+            JObject settings = GetJObjectProperty(response, "InputSettings", "Settings");
+            return (JObject)settings.DeepClone();
         }, cancellationToken);
     }
 
@@ -75,11 +135,16 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
         cancellationToken.ThrowIfCancellationRequested();
         return Task.Run<IReadOnlyList<ObsSceneItemInfo>>(() =>
         {
-            dynamic items = _client.GetSceneItemList(sceneName);
-            var result = new List<ObsSceneItemInfo>();
-            foreach (var item in items)
+            object response = _client.GetSceneItemList(sceneName);
+            IReadOnlyList<object> sceneItems = ExtractEntries(response, "SceneItems", "Items");
+            List<ObsSceneItemInfo> result = new(sceneItems.Count);
+
+            foreach (object sceneItem in sceneItems)
             {
-                result.Add(new ObsSceneItemInfo((int)item.SceneItemId, (string)item.SourceName, (bool)item.SceneItemEnabled));
+                int sceneItemId = GetRequiredIntProperty(sceneItem, "SceneItemId", "SceneItemID", "Id");
+                string sourceName = GetRequiredStringProperty(sceneItem, "SourceName", "Name");
+                bool sceneItemEnabled = GetRequiredBoolProperty(sceneItem, "SceneItemEnabled", "IsEnabled", "Visible");
+                result.Add(new ObsSceneItemInfo(sceneItemId, sourceName, sceneItemEnabled));
             }
 
             return result;
@@ -103,14 +168,152 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
         cancellationToken.ThrowIfCancellationRequested();
         return Task.Run<IReadOnlyList<string>>(() =>
         {
-            dynamic scenes = _client.GetSceneList();
-            var result = new List<string>();
-            foreach (var scene in scenes)
+            object response = _client.GetSceneList();
+            IReadOnlyList<object> scenes = ExtractEntries(response, "Scenes");
+            List<string> result = new(scenes.Count);
+
+            foreach (object scene in scenes)
             {
-                result.Add((string)scene.Name);
+                string sceneName = GetRequiredStringProperty(scene, "SceneName", "Name");
+                result.Add(sceneName);
             }
 
             return result;
         }, cancellationToken);
+    }
+
+    private static IReadOnlyList<object> ExtractEntries(object response, params string[] collectionPropertyNames)
+    {
+        if (response is null)
+            throw new InvalidOperationException("OBS response was null.");
+
+        if (response is string)
+            throw new InvalidOperationException($"OBS response '{response.GetType().FullName}' is not enumerable.");
+
+        if (response is IEnumerable topLevelEnumerable)
+        {
+            List<object> directEntries = new();
+            foreach (object? item in topLevelEnumerable)
+            {
+                if (item is not null)
+                    directEntries.Add(item);
+            }
+
+            if (directEntries.Count > 0)
+                return directEntries;
+        }
+
+        foreach (string propertyName in collectionPropertyNames)
+        {
+            if (!TryGetPropertyValue(response, propertyName, out object? propertyValue) || propertyValue is null)
+                continue;
+
+            if (propertyValue is string)
+                continue;
+
+            if (propertyValue is IEnumerable enumerable)
+            {
+                List<object> entries = new();
+                foreach (object? item in enumerable)
+                {
+                    if (item is not null)
+                        entries.Add(item);
+                }
+
+                return entries;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Could not locate an enumerable collection on OBS response type '{response.GetType().FullName}'.");
+    }
+
+    private static JObject GetJObjectProperty(object source, params string[] propertyNames)
+    {
+        foreach (string propertyName in propertyNames)
+        {
+            if (!TryGetPropertyValue(source, propertyName, out object? value) || value is null)
+                continue;
+
+            if (value is JObject jObject)
+                return jObject;
+        }
+
+        if (source is JObject directJObject)
+            return directJObject;
+
+        throw new InvalidOperationException(
+            $"None of [{string.Join(", ", propertyNames)}] exist as JObject properties on '{source.GetType().FullName}'.");
+    }
+
+    private static string GetRequiredStringProperty(object source, params string[] propertyNames)
+    {
+        foreach (string propertyName in propertyNames)
+        {
+            if (!TryGetPropertyValue(source, propertyName, out object? value) || value is null)
+                continue;
+
+            if (value is string text)
+                return text;
+        }
+
+        throw new InvalidOperationException(
+            $"None of [{string.Join(", ", propertyNames)}] exist as string properties on '{source.GetType().FullName}'.");
+    }
+
+    private static int GetRequiredIntProperty(object source, params string[] propertyNames)
+    {
+        foreach (string propertyName in propertyNames)
+        {
+            if (!TryGetPropertyValue(source, propertyName, out object? value) || value is null)
+                continue;
+
+            if (value is int intValue)
+                return intValue;
+
+            if (value is long longValue)
+                return checked((int)longValue);
+
+            if (value is short shortValue)
+                return shortValue;
+
+            if (int.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+                return parsed;
+        }
+
+        throw new InvalidOperationException(
+            $"None of [{string.Join(", ", propertyNames)}] exist as int-like properties on '{source.GetType().FullName}'.");
+    }
+
+    private static bool GetRequiredBoolProperty(object source, params string[] propertyNames)
+    {
+        foreach (string propertyName in propertyNames)
+        {
+            if (!TryGetPropertyValue(source, propertyName, out object? value) || value is null)
+                continue;
+
+            if (value is bool boolValue)
+                return boolValue;
+
+            if (bool.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), out bool parsed))
+                return parsed;
+        }
+
+        throw new InvalidOperationException(
+            $"None of [{string.Join(", ", propertyNames)}] exist as bool-like properties on '{source.GetType().FullName}'.");
+    }
+
+    private static bool TryGetPropertyValue(object source, string propertyName, out object? value)
+    {
+        const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase;
+        PropertyInfo? property = source.GetType().GetProperty(propertyName, Flags);
+        if (property is null)
+        {
+            value = null;
+            return false;
+        }
+
+        value = property.GetValue(source);
+        return true;
     }
 }

@@ -4,6 +4,17 @@ using ObsInterface;
 var wsUrl = Environment.GetEnvironmentVariable("OBS_WS_URL");
 var wsPassword = Environment.GetEnvironmentVariable("OBS_WS_PASSWORD");
 
+if (string.IsNullOrWhiteSpace(wsUrl))
+{
+    Console.WriteLine("OBS_WS_URL is required (for example: ws://192.168.0.21:4455).");
+    return;
+}
+
+var inputName = Environment.GetEnvironmentVariable("OBS_INPUT_NAME") ?? "P1 Player Name";
+var playerText = Environment.GetEnvironmentVariable("OBS_PLAYER_TEXT") ?? "Franco";
+var sceneName = Environment.GetEnvironmentVariable("OBS_SCENE_NAME") ?? "In-Game Match";
+var sceneItemName = Environment.GetEnvironmentVariable("OBS_SCENE_ITEM_NAME") ?? "In-Game Match Overlay";
+
 using var loggerFactory = LoggerFactory.Create(builder =>
 {
     builder
@@ -35,14 +46,13 @@ if (!connect.Ok)
 var refresh = await obs.RefreshAsync();
 Console.WriteLine($"Refresh: {refresh.Ok} ({refresh.Message})");
 
-var inputName = "P1 Player Name";
-var setText = await obs.SetTextAsync(inputName, "Franco");
+var setText = await obs.SetTextAsync(inputName, playerText);
 Console.WriteLine($"SetText {inputName}: {setText.Ok} ({setText.Code}) {setText.Message}");
 
-var sceneSwitch = await obs.SwitchSceneAsync("Match");
+var sceneSwitch = await obs.SwitchSceneAsync(sceneName);
 Console.WriteLine($"SwitchScene: {sceneSwitch.Ok} ({sceneSwitch.Code}) {sceneSwitch.Message}");
 
-var setVisibility = await obs.SetVisibilityAsync("Match", "P1 Panel", true);
+var setVisibility = await obs.SetVisibilityAsync(sceneName, sceneItemName, true);
 Console.WriteLine($"SetVisibility: {setVisibility.Ok} ({setVisibility.Code}) {setVisibility.Message}");
 
 await obs.DisconnectAsync();
