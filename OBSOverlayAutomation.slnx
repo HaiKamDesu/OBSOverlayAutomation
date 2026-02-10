@@ -1,3 +1,5 @@
 <Solution>
-  <Project Path="BBCF-OBS-Match-Automation/BBCF-OBS-Match-Automation.csproj" />
+  <Project Path="ObsInterface/ObsInterface.csproj" />
+  <Project Path="ObsInterface.Demo/ObsInterface.Demo.csproj" />
+  <Project Path="ObsInterface.Tests/ObsInterface.Tests.csproj" />
 </Solution>
