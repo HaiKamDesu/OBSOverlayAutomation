@@ -1,5 +1,6 @@
 using Newtonsoft.Json.Linq;
 using ObsInterface;
+using Xunit;
 
 namespace ObsInterface.Tests;
 

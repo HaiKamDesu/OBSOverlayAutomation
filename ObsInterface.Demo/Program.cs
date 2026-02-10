@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging;
 using ObsInterface;
 
-var wsUrl = Environment.GetEnvironmentVariable("OBS_WS_URL") ?? "ws://127.0.0.1:4455";
-var wsPassword = Environment.GetEnvironmentVariable("OBS_WS_PASSWORD") ?? "change-me";
+var wsUrl = Environment.GetEnvironmentVariable("OBS_WS_URL");
+var wsPassword = Environment.GetEnvironmentVariable("OBS_WS_PASSWORD");
 
 using var loggerFactory = LoggerFactory.Create(builder =>
 {

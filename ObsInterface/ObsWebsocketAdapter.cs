@@ -16,7 +16,6 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
 
         _client.Connected += (_, _) => Connected?.Invoke(this, EventArgs.Empty);
         _client.Disconnected += (_, _) => Disconnected?.Invoke(this, EventArgs.Empty);
-        _client.ObsError += (_, e) => Error?.Invoke(this, new Exception(e.Message));
     }
 
     public event EventHandler? Connected;
