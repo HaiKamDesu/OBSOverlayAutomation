@@ -1,0 +1,33 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ObsInterface", "ObsInterface/ObsInterface.csproj", "{416285A4-B3E9-4A41-9C1D-A8BDBEFA3F0D}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ObsInterface.Demo", "ObsInterface.Demo/ObsInterface.Demo.csproj", "{DE1AFAFA-CCDC-493D-9CC8-D443033B3BBB}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ObsInterface.Tests", "ObsInterface.Tests/ObsInterface.Tests.csproj", "{FF070F4C-2E2C-4D09-AEBE-953542ECFAD1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{416285A4-B3E9-4A41-9C1D-A8BDBEFA3F0D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{416285A4-B3E9-4A41-9C1D-A8BDBEFA3F0D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{416285A4-B3E9-4A41-9C1D-A8BDBEFA3F0D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{416285A4-B3E9-4A41-9C1D-A8BDBEFA3F0D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DE1AFAFA-CCDC-493D-9CC8-D443033B3BBB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DE1AFAFA-CCDC-493D-9CC8-D443033B3BBB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DE1AFAFA-CCDC-493D-9CC8-D443033B3BBB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DE1AFAFA-CCDC-493D-9CC8-D443033B3BBB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FF070F4C-2E2C-4D09-AEBE-953542ECFAD1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FF070F4C-2E2C-4D09-AEBE-953542ECFAD1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FF070F4C-2E2C-4D09-AEBE-953542ECFAD1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FF070F4C-2E2C-4D09-AEBE-953542ECFAD1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

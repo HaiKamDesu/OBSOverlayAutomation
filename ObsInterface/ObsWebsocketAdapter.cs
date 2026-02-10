@@ -141,9 +141,11 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
 
             foreach (object sceneItem in sceneItems)
             {
-                int sceneItemId = GetRequiredIntProperty(sceneItem, "SceneItemId", "SceneItemID", "Id");
+                int sceneItemId = GetRequiredIntProperty(sceneItem, "ItemId", "SceneItemId", "SceneItemID", "Id");
                 string sourceName = GetRequiredStringProperty(sceneItem, "SourceName", "Name");
-                bool sceneItemEnabled = GetRequiredBoolProperty(sceneItem, "SceneItemEnabled", "IsEnabled", "Visible");
+                bool sceneItemEnabled = TryGetBoolProperty(sceneItem, out bool enabled, "SceneItemEnabled", "IsEnabled", "Visible")
+                    ? enabled
+                    : _client.GetSceneItemEnabled(sceneName, sceneItemId);
                 result.Add(new ObsSceneItemInfo(sceneItemId, sourceName, sceneItemEnabled));
             }
 
@@ -285,22 +287,28 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
             $"None of [{string.Join(", ", propertyNames)}] exist as int-like properties on '{source.GetType().FullName}'.");
     }
 
-    private static bool GetRequiredBoolProperty(object source, params string[] propertyNames)
+    private static bool TryGetBoolProperty(object source, out bool value, params string[] propertyNames)
     {
         foreach (string propertyName in propertyNames)
         {
-            if (!TryGetPropertyValue(source, propertyName, out object? value) || value is null)
+            if (!TryGetPropertyValue(source, propertyName, out object? propertyValue) || propertyValue is null)
                 continue;
 
-            if (value is bool boolValue)
-                return boolValue;
+            if (propertyValue is bool boolValue)
+            {
+                value = boolValue;
+                return true;
+            }
 
-            if (bool.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), out bool parsed))
-                return parsed;
+            if (bool.TryParse(Convert.ToString(propertyValue, CultureInfo.InvariantCulture), out bool parsed))
+            {
+                value = parsed;
+                return true;
+            }
         }
 
-        throw new InvalidOperationException(
-            $"None of [{string.Join(", ", propertyNames)}] exist as bool-like properties on '{source.GetType().FullName}'.");
+        value = default;
+        return false;
     }
 
     private static bool TryGetPropertyValue(object source, string propertyName, out object? value)

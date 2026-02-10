@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 using ObsInterface;
 
 var wsUrl = Environment.GetEnvironmentVariable("OBS_WS_URL");
-var wsPassword = Environment.GetEnvironmentVariable("OBS_WS_PASSWORD");
+var wsPassword = Environment.GetEnvironmentVariable("OBS_WS_PASSWORD") ?? string.Empty;
 
 if (string.IsNullOrWhiteSpace(wsUrl))
 {

@@ -67,7 +67,11 @@ internal sealed class FakeObsAdapter : IObsWebsocketAdapter
 {
     public event EventHandler? Connected;
     public event EventHandler? Disconnected;
-    public event EventHandler<Exception>? Error;
+    public event EventHandler<Exception>? Error
+    {
+        add { }
+        remove { }
+    }
 
     public bool IsConnected => IsConnectedState;
     public bool IsConnectedState { get; set; }
