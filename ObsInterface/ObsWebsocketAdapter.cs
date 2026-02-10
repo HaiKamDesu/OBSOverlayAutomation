@@ -8,6 +8,7 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
 {
     private readonly OBSWebsocket _client;
     private readonly ILogger<ObsWebsocketAdapter> _logger;
+    private readonly SemaphoreSlim _connectGate = new(1, 1);
 
     public ObsWebsocketAdapter(OBSWebsocket? client = null, ILogger<ObsWebsocketAdapter>? logger = null)
     {
@@ -24,14 +25,22 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
 
     public bool IsConnected => _client.IsConnected;
 
-    public Task ConnectAsync(string url, string password, CancellationToken cancellationToken = default)
+    public async Task ConnectAsync(string url, string password, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_client.IsConnected)
-            return Task.CompletedTask;
+        await _connectGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_client.IsConnected)
+                return;
 
-        return ConnectAndAwaitAsync(url, password, cancellationToken);
+            await ConnectAndAwaitAsync(url, password, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _connectGate.Release();
+        }
     }
 
     private async Task ConnectAndAwaitAsync(string url, string password, CancellationToken cancellationToken)
@@ -85,11 +94,11 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
         cancellationToken.ThrowIfCancellationRequested();
         return Task.Run<IReadOnlyList<ObsInputInfo>>(() =>
         {
-            dynamic inputs = _client.GetInputList();
-            var result = new List<ObsInputInfo>();
+            var inputs = _client.GetInputList();
+            var result = new List<ObsInputInfo>(inputs.Count);
             foreach (var input in inputs)
             {
-                result.Add(new ObsInputInfo((string)input.InputName, (string)input.InputKind));
+                result.Add(new ObsInputInfo(input.InputName, input.InputKind));
             }
 
             return result;
@@ -101,8 +110,8 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
         cancellationToken.ThrowIfCancellationRequested();
         return Task.Run(() =>
         {
-            dynamic response = _client.GetInputSettings(inputName);
-            return (JObject)response.InputSettings;
+            var response = _client.GetInputSettings(inputName);
+            return (JObject)response.InputSettings.DeepClone();
         }, cancellationToken);
     }
 
@@ -117,11 +126,11 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
         cancellationToken.ThrowIfCancellationRequested();
         return Task.Run<IReadOnlyList<ObsSceneItemInfo>>(() =>
         {
-            dynamic items = _client.GetSceneItemList(sceneName);
-            var result = new List<ObsSceneItemInfo>();
+            var items = _client.GetSceneItemList(sceneName);
+            var result = new List<ObsSceneItemInfo>(items.Count);
             foreach (var item in items)
             {
-                result.Add(new ObsSceneItemInfo((int)item.SceneItemId, (string)item.SourceName, (bool)item.SceneItemEnabled));
+                result.Add(new ObsSceneItemInfo(item.SceneItemId, item.SourceName, item.SceneItemEnabled));
             }
 
             return result;
@@ -145,11 +154,11 @@ public sealed class ObsWebsocketAdapter : IObsWebsocketAdapter
         cancellationToken.ThrowIfCancellationRequested();
         return Task.Run<IReadOnlyList<string>>(() =>
         {
-            dynamic scenes = _client.GetSceneList();
-            var result = new List<string>();
+            var scenes = _client.GetSceneList();
+            var result = new List<string>(scenes.Count);
             foreach (var scene in scenes)
             {
-                result.Add((string)scene.Name);
+                result.Add(scene.Name);
             }
 
             return result;
