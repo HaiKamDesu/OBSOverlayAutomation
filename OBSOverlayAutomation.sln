@@ -10,6 +10,12 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ObsInterface.Tests", "ObsIn
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TournamentAutomation", "TournamentAutomation\TournamentAutomation.csproj", "{CBC40A62-3DD2-414A-8789-F91A0EB92494}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChallongeInterface", "ChallongeInterface\ChallongeInterface.csproj", "{8B03DBCF-CFBC-4225-9754-1E417DF92053}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChallongeInterface.Demo", "ChallongeInterface.Demo\ChallongeInterface.Demo.csproj", "{30A9CC76-8927-4D3C-A99A-6E170C6CF89B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChallongeInterface.Tests", "ChallongeInterface.Tests\ChallongeInterface.Tests.csproj", "{DB9976D8-E678-4D21-B16C-B4E36CBD917D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -32,6 +38,18 @@ Global
 		{CBC40A62-3DD2-414A-8789-F91A0EB92494}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CBC40A62-3DD2-414A-8789-F91A0EB92494}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CBC40A62-3DD2-414A-8789-F91A0EB92494}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8B03DBCF-CFBC-4225-9754-1E417DF92053}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8B03DBCF-CFBC-4225-9754-1E417DF92053}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8B03DBCF-CFBC-4225-9754-1E417DF92053}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8B03DBCF-CFBC-4225-9754-1E417DF92053}.Release|Any CPU.Build.0 = Release|Any CPU
+		{30A9CC76-8927-4D3C-A99A-6E170C6CF89B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{30A9CC76-8927-4D3C-A99A-6E170C6CF89B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{30A9CC76-8927-4D3C-A99A-6E170C6CF89B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{30A9CC76-8927-4D3C-A99A-6E170C6CF89B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DB9976D8-E678-4D21-B16C-B4E36CBD917D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DB9976D8-E678-4D21-B16C-B4E36CBD917D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DB9976D8-E678-4D21-B16C-B4E36CBD917D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DB9976D8-E678-4D21-B16C-B4E36CBD917D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
