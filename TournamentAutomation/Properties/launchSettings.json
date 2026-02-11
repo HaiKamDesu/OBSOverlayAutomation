@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "TournamentAutomation": {
+      "commandName": "Project",
+      "commandLineArgs": "",
+      "workingDirectory": "$(ProjectDir)"
+    }
+  }
+}

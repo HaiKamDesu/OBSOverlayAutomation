@@ -1,12 +1,14 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ObsInterface", "ObsInterface/ObsInterface.csproj", "{416285A4-B3E9-4A41-9C1D-A8BDBEFA3F0D}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ObsInterface", "ObsInterface\ObsInterface.csproj", "{416285A4-B3E9-4A41-9C1D-A8BDBEFA3F0D}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ObsInterface.Demo", "ObsInterface.Demo/ObsInterface.Demo.csproj", "{DE1AFAFA-CCDC-493D-9CC8-D443033B3BBB}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ObsInterface.Demo", "ObsInterface.Demo\ObsInterface.Demo.csproj", "{DE1AFAFA-CCDC-493D-9CC8-D443033B3BBB}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ObsInterface.Tests", "ObsInterface.Tests/ObsInterface.Tests.csproj", "{FF070F4C-2E2C-4D09-AEBE-953542ECFAD1}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ObsInterface.Tests", "ObsInterface.Tests\ObsInterface.Tests.csproj", "{FF070F4C-2E2C-4D09-AEBE-953542ECFAD1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TournamentAutomation", "TournamentAutomation\TournamentAutomation.csproj", "{CBC40A62-3DD2-414A-8789-F91A0EB92494}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,6 +28,10 @@ Global
 		{FF070F4C-2E2C-4D09-AEBE-953542ECFAD1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FF070F4C-2E2C-4D09-AEBE-953542ECFAD1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FF070F4C-2E2C-4D09-AEBE-953542ECFAD1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CBC40A62-3DD2-414A-8789-F91A0EB92494}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CBC40A62-3DD2-414A-8789-F91A0EB92494}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CBC40A62-3DD2-414A-8789-F91A0EB92494}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CBC40A62-3DD2-414A-8789-F91A0EB92494}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,0 +1,320 @@
+# OBS Fighting Game Tournament Automation Controller
+## Agent Instructions / Project Specification
+
+---
+
+## Overview
+
+You are an expert software engineer tasked with building a **professional-grade fighting game tournament broadcast automation controller**.
+
+This project is designed for **live tournament environments**, where:
+- Speed is critical
+- Mistakes are inevitable
+- Recovery must be instant
+- Broadcast consistency is mandatory
+- Operator cognitive load must be minimized
+
+This is **not** a casual streaming tool. It is a **production broadcast control system**.
+
+---
+
+## Existing Project Context
+
+There already exists a **fully functional OBS Integration Interface project**.
+
+This existing project:
+- Handles all direct interaction with OBS
+- Exposes a clean API for:
+  - Scene switching
+  - Text source updates
+  - Image source updates
+  - Source toggling
+  - Audio control
+- Is considered **stable and reusable**
+
+### Important Architectural Rule
+
+This project you are building is a **separate orchestration layer** that USES the OBS Integration.
+
+- You must NOT tightly couple logic into the OBS integration
+- You must NOT reimplement OBS APIs
+
+However:
+
+> **If, in order to implement required or optimal functionality, additional OBS-facing methods are needed, you ARE allowed to extend the OBS Integration project.**
+
+When doing so:
+- Add only generic, reusable functionality
+- Do NOT add tournament-specific logic to the OBS layer
+- Maintain clean separation of concerns
+
+The orchestration project owns *behavior*.  
+The OBS Integration owns *communication*.
+
+---
+
+## Core Goal
+
+Build a **hotkey-driven automation system** that allows a single operator to run an entire fighting game tournament broadcast **without directly touching OBS**.
+
+The system must:
+- Be fast
+- Be safe
+- Be reversible
+- Be extensible
+- Be deterministic
+
+---
+
+## Core Interaction Model
+
+### Global Hotkey Mode
+
+- `Ctrl + K` enters **Hotkey Mode**
+- While Hotkey Mode is active:
+  - Subsequent key presses trigger registered actions
+  - Hotkey Mode automatically exits after a configurable timeout
+  - Entering Hotkey Mode provides clear feedback (log or visual)
+
+`Ctrl + K` acts as the universal “intent starter” for all actions.
+
+---
+
+## Hotkey System Requirements
+
+### Hotkey Registration API
+
+Hotkeys must be configurable **entirely in one place**, using a clean API such as:
+
+AddHotkey(
+keySequence: Key | Key[],
+action: IAction
+)
+
+
+Where:
+- `keySequence` supports:
+  - Single key presses
+  - Key chords
+  - Sequential presses (e.g. Ctrl+K, then S)
+- `action` is a self-contained executable command
+
+Hotkeys must be:
+- Easy to add
+- Easy to remove
+- Easy to remap
+- Discoverable in code
+
+---
+
+## Mandatory Architectural Pattern
+
+### Command Pattern (REQUIRED)
+
+Every action must be implemented as a **Command**.
+
+Each command must:
+- Encapsulate exactly one user intent
+- Implement:
+  - `Execute()`
+  - `Undo()`
+
+This is non-negotiable.
+
+This enables:
+- Undo / Redo
+- Safety guarantees
+- Atomic execution
+- Action logging
+- Predictable behavior under stress
+
+---
+
+## Undo / Redo System
+
+- Maintain undo and redo stacks
+- Undo must restore the **exact previous state**
+- Undo applies to:
+  - Score changes
+  - Player swaps
+  - Player info updates
+  - Match resets
+  - Scene changes (preferred)
+
+Undo is a **core tournament feature**, not a bonus.
+
+---
+
+## Player and Match Model
+
+### Player State (P1 / P2)
+
+Each player consists of:
+- Name
+- Team
+- Country
+- Character (optional but supported)
+- Score
+
+### Match State
+
+Match-level data includes:
+- Best-of format (FT2 / BO5 / BO7)
+- Games required to win
+- Current round label (Pools, Top 8, Winners Finals, Grand Finals, etc.)
+- Match point detection
+
+---
+
+## Required Tournament Actions
+
+### Scene Control
+
+Hotkeys must exist to:
+- Set scene to:
+  - In-Match
+  - Commentary / Desk
+  - Break / Intermission
+  - Results / Winner screen
+
+Scene changes must be:
+- Instant
+- Atomic
+- Reversible if feasible
+
+---
+
+### Player Information Control
+
+- Set full player info for P1 or P2 in one action
+- Support preset player profiles (optional)
+- Swap players with variants:
+  - Swap everything
+  - Swap scores only
+  - Swap names only
+
+This is critical for side-swapped games.
+
+---
+
+### Score Control
+
+- Increment score
+- Decrement score
+- Clamp score to valid ranges (configurable)
+- Respect Best-of format
+- Detect match point
+- Allow manual correction when needed
+
+---
+
+### Match Flow Control
+
+- Reset match (with confirmation or hold-to-activate)
+- Load next match from a queue
+- Preserve or reset round labels as configured
+- Support manual overrides
+
+---
+
+## Safety and Error Prevention (CRITICAL)
+
+- Dangerous actions must require:
+  - Confirmation
+  - Or hold-to-activate behavior
+- All actions must be atomic
+- Partial overlay updates must NEVER appear on stream
+- Every command execution must:
+  - Snapshot prior state
+  - Be logged with timestamp
+
+This system is designed to assume **human error** and recover instantly.
+
+---
+
+## OBS-Level Broadcast Controls
+
+Using the OBS Integration interface, support hotkeys for:
+- Toggling player cams
+- Toggling caster cams
+- Toggling crowd mic
+- Muting / unmuting all audio
+- Audio ducking (temporary volume reduction)
+- Triggering:
+  - Starting Soon
+  - Be Right Back
+  - Intermission bumpers
+
+---
+
+## Match Queue System
+
+- Maintain an internal queue of matches
+- Each match includes:
+  - Player data
+  - Round label
+  - Best-of format
+- A “Load Match” action:
+  - Sets overlays
+  - Resets scores
+  - Prepares the broadcast instantly
+
+---
+
+## Logging and Audit
+
+- Log every executed command
+- Log undo and redo operations
+- Optional: export match history
+- Logs are intended for:
+  - Debugging
+  - Recovery
+  - Operator confidence
+
+---
+
+## Explicit Non-Goals
+
+- Do NOT build a full UI unless required for debugging
+- Do NOT tightly couple logic into OBS
+- Do NOT assume internet connectivity
+- Do NOT hardcode overlay names
+- Do NOT design for casual streaming use cases
+
+---
+
+## Code Quality Expectations
+
+- Clean separation between:
+  - Input handling
+  - Command execution
+  - Match state
+  - OBS communication
+- Deterministic behavior
+- Easily extensible for:
+  - Stream Deck
+  - MIDI controllers
+  - Web UI control panels
+- Code should be readable under production stress
+
+---
+
+## Success Criteria
+
+This project is successful if:
+- A tournament can be run without touching OBS directly
+- Any operator mistake can be undone instantly
+- Overlay state is always consistent
+- Hotkeys are trivial to add or change
+- The system feels intentionally designed for **live tournament pressure**
+
+---
+
+## Final Note
+
+If implementing any feature requires additional OBS-facing capabilities:
+- Extend the OBS Integration cleanly
+- Keep responsibilities separated
+- Favor optimal, maintainable solutions over rigid boundaries
+
+The goal is a **robust professional tool**, not strict dogma.

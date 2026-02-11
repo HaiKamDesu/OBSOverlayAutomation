@@ -223,6 +223,20 @@ public sealed class ObsController
         return await SetInputSettingsAsync(inputName, settings, true, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<Result<string>> GetTextAsync(string inputName, CancellationToken cancellationToken = default)
+    {
+        var settingsResult = await GetInputSettingsAsync(inputName, cancellationToken).ConfigureAwait(false);
+        if (!settingsResult.Ok)
+            return Result<string>.Fail(settingsResult.Code, settingsResult.Message, settingsResult.Exception);
+
+        var settings = settingsResult.Value!;
+        if (!settings.ContainsKey("text"))
+            return Fail<string>(ResultCodes.TypeMismatch, $"Input '{inputName}' does not expose a 'text' setting key.");
+
+        var value = settings.Value<string>("text") ?? string.Empty;
+        return Result<string>.Success(value);
+    }
+
     public async Task<Result<bool>> SetImageFileAsync(string inputName, string filePath, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -239,6 +253,21 @@ public sealed class ObsController
 
         var patch = new JObject { [key] = filePath };
         return await SetInputSettingsAsync(inputName, patch, true, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<Result<string>> GetImageFileAsync(string inputName, CancellationToken cancellationToken = default)
+    {
+        var settingsResult = await GetInputSettingsAsync(inputName, cancellationToken).ConfigureAwait(false);
+        if (!settingsResult.Ok)
+            return Result<string>.Fail(settingsResult.Code, settingsResult.Message, settingsResult.Exception);
+
+        var settings = settingsResult.Value!;
+        var key = settings.ContainsKey("file") ? "file" : settings.ContainsKey("local_file") ? "local_file" : null;
+        if (key is null)
+            return Fail<string>(ResultCodes.TypeMismatch, $"Input '{inputName}' does not support a recognized image path setting key.");
+
+        var value = settings.Value<string>(key) ?? string.Empty;
+        return Result<string>.Success(value);
     }
 
     public async Task<Result<int>> GetSceneItemIdAsync(string sceneName, string sceneItemName, CancellationToken cancellationToken = default)
