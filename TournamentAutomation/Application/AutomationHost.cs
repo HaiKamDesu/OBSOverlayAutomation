@@ -74,6 +74,13 @@ public sealed class AutomationHost
     public Task<CommandResult> ApplyProfileAsync(bool isP1, string profileId, CancellationToken cancellationToken)
         => ExecuteAsync(new SetPlayerProfileCommand(isP1, profileId), cancellationToken);
 
+    public async Task<bool> SetCurrentMatchAsync(MatchState match, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(match);
+        State.SetCurrentMatch(match);
+        return await _overlay.ApplyMatchAsync(match, cancellationToken);
+    }
+
     private Task<CommandResult> ExecuteAsync(ICommand command, CancellationToken cancellationToken)
         => _dispatcher.ExecuteAsync(command, _context, cancellationToken);
 

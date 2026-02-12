@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using ChallongeInterface.Models;
 using Newtonsoft.Json;
+using System.Net.Http.Headers;
 
 namespace ChallongeInterface;
 
@@ -115,6 +116,43 @@ public sealed class ChallongeClient
         }
 
         return envelope.Participant;
+    }
+
+    public async Task<Match> UpdateMatchAsync(
+        string tournament,
+        long matchId,
+        string scoresCsv,
+        long winnerId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(tournament))
+            throw new ArgumentException("Tournament is required.", nameof(tournament));
+
+        if (string.IsNullOrWhiteSpace(scoresCsv))
+            throw new ArgumentException("scoresCsv is required.", nameof(scoresCsv));
+
+        var path = $"tournaments/{Uri.EscapeDataString(tournament)}/matches/{matchId}.json";
+        var requestUri = BuildUri(path, new Dictionary<string, string?>());
+        var body = new Dictionary<string, string>
+        {
+            ["match[scores_csv]"] = scoresCsv,
+            ["match[winner_id]"] = winnerId.ToString()
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, requestUri)
+        {
+            Content = new FormUrlEncodedContent(body)
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var payload = await ReadOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+
+        var envelope = JsonConvert.DeserializeObject<MatchEnvelope>(payload);
+        if (envelope?.Match is null)
+            throw new InvalidOperationException("Challonge API returned an empty match payload.");
+
+        return envelope.Match;
     }
 
     private Uri BuildUri(string relativePath, Dictionary<string, string?> query)

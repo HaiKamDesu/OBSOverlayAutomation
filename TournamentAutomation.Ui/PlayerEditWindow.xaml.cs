@@ -17,13 +17,13 @@ public partial class PlayerEditWindow : Window
             _countries.Add(entry);
 
         CountryBox.ItemsSource = _countries;
-        CountryBox.DisplayMemberPath = nameof(CountryInfo.Id);
 
         if (profile is not null)
         {
             NameBox.Text = profile.Name;
             TeamBox.Text = profile.Team;
             CharactersBox.Text = profile.Characters;
+            AliasesBox.Text = string.Join(", ", profile.Aliases);
 
             if (Enum.TryParse<CountryId>(profile.Country, true, out var id))
                 CountryBox.SelectedItem = _countries.FirstOrDefault(x => x.Id == id);
@@ -39,6 +39,7 @@ public partial class PlayerEditWindow : Window
         var name = NameBox.Text?.Trim() ?? string.Empty;
         var team = TeamBox.Text?.Trim() ?? string.Empty;
         var characters = CharactersBox.Text?.Trim() ?? string.Empty;
+        var aliases = ParseAliases(AliasesBox.Text);
         var country = (CountryBox.SelectedItem as CountryInfo)?.Id.ToString() ?? CountryId.Unknown.ToString();
 
         Result = new PlayerProfile
@@ -46,7 +47,8 @@ public partial class PlayerEditWindow : Window
             Name = name,
             Team = team,
             Country = country,
-            Characters = characters
+            Characters = characters,
+            Aliases = aliases
         };
 
         DialogResult = true;
@@ -55,5 +57,17 @@ public partial class PlayerEditWindow : Window
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
         DialogResult = false;
+    }
+
+    private static List<string> ParseAliases(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return new List<string>();
+
+        return input
+            .Split(new[] { ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(alias => !string.IsNullOrWhiteSpace(alias))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 }

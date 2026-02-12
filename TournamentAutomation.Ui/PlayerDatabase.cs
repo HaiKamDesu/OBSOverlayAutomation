@@ -9,6 +9,8 @@ public sealed class PlayerProfile
     public string Team { get; set; } = string.Empty;
     public string Country { get; set; } = string.Empty;
     public string Characters { get; set; } = string.Empty;
+    public List<string> Aliases { get; set; } = new();
+    public string AliasesDisplay => string.Join(", ", Aliases);
 }
 
 public sealed class PlayerDatabase
@@ -31,7 +33,12 @@ public static class PlayerDatabaseStore
         try
         {
             var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<PlayerDatabase>(json, JsonOptions) ?? new PlayerDatabase();
+            var database = JsonSerializer.Deserialize<PlayerDatabase>(json, JsonOptions) ?? new PlayerDatabase();
+
+            foreach (var player in database.Players)
+                player.Aliases ??= new List<string>();
+
+            return database;
         }
         catch
         {

@@ -1,37 +1,248 @@
 <Window x:Class="TournamentAutomation.Ui.PlayerEditWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Player" Height="360" Width="520"
-        Background="#101315" Foreground="#EAEAEA"
-        WindowStartupLocation="CenterOwner">
-    <Grid Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+        Title="Player Editor"
+        Height="620"
+        Width="760"
+        MinHeight="560"
+        MinWidth="700"
+        Background="#0E1116"
+        Foreground="#E9EEF6"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanMinimize">
+    <Window.Resources>
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#151A22" />
+        <SolidColorBrush x:Key="SurfaceAltBrush" Color="#1B2230" />
+        <SolidColorBrush x:Key="BorderBrushStrong" Color="#2A3346" />
+        <SolidColorBrush x:Key="TextBrushMuted" Color="#A6B2C4" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#3BA4FF" />
+        <SolidColorBrush x:Key="AccentHoverBrush" Color="#58B3FF" />
 
-        <Label Grid.Row="0" Grid.Column="0" Content="Name" />
-        <TextBox Grid.Row="0" Grid.Column="1" Name="NameBox" />
+        <Style TargetType="Label">
+            <Setter Property="Foreground" Value="{StaticResource TextBrushMuted}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
 
-        <Label Grid.Row="1" Grid.Column="0" Content="Team" />
-        <TextBox Grid.Row="1" Grid.Column="1" Name="TeamBox" />
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource SurfaceAltBrush}" />
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushStrong}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
 
-        <Label Grid.Row="2" Grid.Column="0" Content="Country" />
-        <ComboBox Grid.Row="2" Grid.Column="1" Name="CountryBox" />
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{StaticResource SurfaceAltBrush}" />
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushStrong}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}">
+                                <Grid>
+                                    <ContentPresenter x:Name="ContentSite"
+                                                      Margin="{TemplateBinding Padding}"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding ItemTemplate}"
+                                                      ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalAlignment="Left" />
+                                    <TextBox x:Name="PART_EditableTextBox"
+                                             Margin="{TemplateBinding Padding}"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Foreground="{TemplateBinding Foreground}"
+                                             VerticalContentAlignment="Center"
+                                             HorizontalContentAlignment="Left"
+                                             Visibility="Hidden"
+                                             IsReadOnly="{TemplateBinding IsReadOnly}" />
+                                </Grid>
+                            </ToggleButton>
+                            <Popup x:Name="Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}">
+                                    <ScrollViewer CanContentScroll="True">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="Popup" Property="MinHeight" Value="95" />
+                            </Trigger>
+                            <Trigger Property="IsEditable" Value="True">
+                                <Setter TargetName="ContentSite" Property="Visibility" Value="Hidden" />
+                                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#6B7280" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
-        <Label Grid.Row="3" Grid.Column="0" Content="Characters" />
-        <TextBox Grid.Row="3" Grid.Column="1" Name="CharactersBox" />
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="Background" Value="{StaticResource SurfaceAltBrush}" />
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#263249" />
+                    <Setter Property="Foreground" Value="#F5F9FF" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#31405C" />
+                    <Setter Property="Foreground" Value="#F5F9FF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
 
-        <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Width="90" Margin="6" Content="Cancel" Click="Cancel_Click" />
-            <Button Width="90" Margin="6" Content="Save" Click="Save_Click" />
-        </StackPanel>
+        <DataTemplate x:Key="CountryItemTemplate">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Image Source="{Binding FlagPath}" Width="22" Height="16" Margin="0,0,8,0" Stretch="UniformToFill" />
+                <TextBlock Text="{Binding Id}" VerticalAlignment="Center" Foreground="#E9EEF6" />
+            </StackPanel>
+        </DataTemplate>
+
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Background" Value="#222A39" />
+            <Setter Property="Foreground" Value="#D9E3F3" />
+            <Setter Property="BorderBrush" Value="#33405A" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="16,8" />
+            <Setter Property="MinWidth" Value="100" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Foreground" Value="#06131F" />
+            <Setter Property="BorderBrush" Value="#66BAFF" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AccentHoverBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#1B2230" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#E9EEF6" />
+    </Window.Resources>
+
+    <Grid Margin="22">
+        <Border Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrushStrong}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Padding="20">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Margin="0,0,0,16">
+                    <TextBlock Text="Player Profile"
+                               FontSize="22"
+                               FontWeight="Bold"
+                               Foreground="#F5F9FF" />
+                    <TextBlock Text="Create or update player metadata used for stream overlays."
+                               Margin="0,6,0,0"
+                               Foreground="{StaticResource TextBrushMuted}" />
+                </StackPanel>
+
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Margin="0,0,0,8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,10,12">
+                            <Label Content="Name" />
+                            <TextBox x:Name="NameBox" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="0" Grid.Column="1" Margin="10,0,0,12">
+                            <Label Content="Team" />
+                            <TextBox x:Name="TeamBox" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Grid.ColumnSpan="2">
+                            <Label Content="Country" />
+                            <ComboBox x:Name="CountryBox"
+                                      ItemTemplate="{StaticResource CountryItemTemplate}" />
+
+                            <Label Content="Characters" Margin="0,12,0,6" />
+                            <TextBox x:Name="CharactersBox" />
+
+                            <Label Content="Aliases" Margin="0,12,0,6" />
+                            <TextBox x:Name="AliasesBox"
+                                     Height="88"
+                                     VerticalAlignment="Top"
+                                     VerticalContentAlignment="Top"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     ToolTip="Comma-separated aliases, e.g. Byakugan, BKY" />
+                            <TextBlock Text="Tip: add one or multiple aliases separated by commas."
+                                       Margin="0,6,0,0"
+                                       Foreground="{StaticResource TextBrushMuted}" />
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+
+                <StackPanel Grid.Row="2"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Margin="0,20,0,0">
+                    <Button Style="{StaticResource SecondaryButton}"
+                            Content="Cancel"
+                            IsCancel="True"
+                            Click="Cancel_Click" />
+                    <Button Style="{StaticResource PrimaryButton}"
+                            Content="Save Player"
+                            IsDefault="True"
+                            Margin="0"
+                            Click="Save_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

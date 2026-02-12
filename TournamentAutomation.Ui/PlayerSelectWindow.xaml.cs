@@ -105,6 +105,13 @@ public partial class PlayerSelectWindow : Window
             return;
         }
 
+        var aliasConflict = FindAliasConflict(profile, null);
+        if (!string.IsNullOrWhiteSpace(aliasConflict))
+        {
+            MessageBox.Show(aliasConflict, "Add Player", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
         _database.Players.Add(profile);
         _players.Add(profile);
         ResortPlayers();
@@ -126,6 +133,13 @@ public partial class PlayerSelectWindow : Window
             return;
         }
 
+        var aliasConflict = FindAliasConflict(updated, original);
+        if (!string.IsNullOrWhiteSpace(aliasConflict))
+        {
+            MessageBox.Show(aliasConflict, "Edit Player", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
         var dbEntry = _database.Players.FirstOrDefault(x =>
             string.Equals(x.Name, original.Name, StringComparison.OrdinalIgnoreCase));
         if (dbEntry is null)
@@ -138,11 +152,13 @@ public partial class PlayerSelectWindow : Window
         dbEntry.Team = updated.Team;
         dbEntry.Country = updated.Country;
         dbEntry.Characters = updated.Characters;
+        dbEntry.Aliases = updated.Aliases;
 
         original.Name = updated.Name;
         original.Team = updated.Team;
         original.Country = updated.Country;
         original.Characters = updated.Characters;
+        original.Aliases = updated.Aliases;
 
         ResortPlayers();
         PlayerDatabaseStore.Save(_databasePath, _database);
@@ -154,5 +170,31 @@ public partial class PlayerSelectWindow : Window
         _players.Clear();
         foreach (var profile in ordered)
             _players.Add(profile);
+    }
+
+    private string? FindAliasConflict(PlayerProfile candidate, PlayerProfile? existingProfile)
+    {
+        var normalizedName = candidate.Name.Trim();
+        var nameConflict = _database.Players.FirstOrDefault(player =>
+            !ReferenceEquals(player, existingProfile) &&
+            player.Aliases.Any(existingAlias => string.Equals(existingAlias, normalizedName, StringComparison.OrdinalIgnoreCase)));
+        if (nameConflict is not null)
+            return $"Player name '{candidate.Name}' conflicts with alias on '{nameConflict.Name}'.";
+
+        foreach (var alias in candidate.Aliases)
+        {
+            if (string.Equals(alias, normalizedName, StringComparison.OrdinalIgnoreCase))
+                return "An alias cannot be the same as the player's own name.";
+
+            var conflict = _database.Players.FirstOrDefault(player =>
+                !ReferenceEquals(player, existingProfile) &&
+                (string.Equals(player.Name, alias, StringComparison.OrdinalIgnoreCase) ||
+                 player.Aliases.Any(existingAlias => string.Equals(existingAlias, alias, StringComparison.OrdinalIgnoreCase))));
+
+            if (conflict is not null)
+                return $"Alias '{alias}' conflicts with player '{conflict.Name}'.";
+        }
+
+        return null;
     }
 }

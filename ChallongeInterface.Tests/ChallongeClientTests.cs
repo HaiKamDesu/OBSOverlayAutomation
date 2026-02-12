@@ -82,6 +82,35 @@ public sealed class ChallongeClientTests
     }
 
     [Fact]
+    public async Task UpdateMatchAsync_SendsPutWithScoresAndWinner()
+    {
+        var handler = new TestHttpMessageHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Put, request.Method);
+            Assert.Contains("/v1/tournaments/my-tourney/matches/10.json", request.RequestUri?.AbsolutePath);
+            Assert.Contains("api_key=test-key", request.RequestUri?.Query);
+
+            var payload = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            Assert.Contains("match%5Bscores_csv%5D=2-1", payload);
+            Assert.Contains("match%5Bwinner_id%5D=99", payload);
+
+            var json = "{'match':{'id':10,'winner_id':99,'scores_csv':'2-1','state':'complete'}}";
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json.Replace('\'', '"'), Encoding.UTF8, "application/json")
+            };
+        });
+
+        var client = CreateClient(handler);
+
+        Match updated = await client.UpdateMatchAsync("my-tourney", 10, "2-1", 99);
+
+        Assert.Equal(10, updated.Id);
+        Assert.Equal(99, updated.WinnerId);
+        Assert.Equal("2-1", updated.ScoresCsv);
+    }
+
+    [Fact]
     public async Task GetParticipantsAsync_ThrowsOnError()
     {
         var handler = new TestHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)

@@ -6,6 +6,8 @@ namespace TournamentAutomation.Ui;
 public sealed class UserSettings
 {
     public string? PlayerDatabasePath { get; set; }
+    public string? ChallongeTournament { get; set; }
+    public string? ChallongeApiKey { get; set; }
 }
 
 public static class UserSettingsStore

@@ -9,6 +9,37 @@
             <Setter Property="Background" Value="#1F2933" />
             <Setter Property="Foreground" Value="#EAEAEA" />
             <Setter Property="BorderBrush" Value="#334155" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#273442" />
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#475569" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#1B2530" />
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#334155" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="TextBox">
             <Setter Property="Margin" Value="6" />
@@ -37,6 +68,39 @@
                                           Background="{TemplateBinding Background}"
                                           BorderBrush="{TemplateBinding BorderBrush}"
                                           BorderThickness="{TemplateBinding BorderThickness}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="ToggleBorder"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="3"
+                                                SnapsToDevicePixels="True">
+                                            <Grid>
+                                                <ContentPresenter Margin="0,0,26,0"
+                                                                  HorizontalAlignment="Stretch"
+                                                                  VerticalAlignment="Stretch" />
+                                                <Path HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      Margin="0,0,10,0"
+                                                      Fill="#9CA3AF"
+                                                      Data="M 0 0 L 4 4 L 8 0 Z" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="ToggleBorder" Property="Background" Value="#131A20" />
+                                                <Setter TargetName="ToggleBorder" Property="BorderBrush" Value="#475569" />
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="ToggleBorder" Property="Background" Value="#10171D" />
+                                            </Trigger>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter TargetName="ToggleBorder" Property="Opacity" Value="0.6" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
                                 <Grid>
                                     <ContentPresenter x:Name="ContentSite"
                                                       Margin="{TemplateBinding Padding}"
@@ -86,6 +150,15 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="#475569" />
+                    <Setter Property="Background" Value="#10171D" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                    <Setter Property="BorderBrush" Value="#64748B" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
         <Style TargetType="ComboBoxItem">
             <Setter Property="Padding" Value="6" />
@@ -108,6 +181,27 @@
             <Setter Property="Margin" Value="6,6,6,0" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="#9CA3AF" />
+        </Style>
+        <Style TargetType="ListBox">
+            <Setter Property="Background" Value="#0B0F12" />
+            <Setter Property="Foreground" Value="#EAEAEA" />
+            <Setter Property="BorderBrush" Value="#334155" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Background" Value="#0B0F12" />
+            <Setter Property="Foreground" Value="#EAEAEA" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#111827" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#1F2933" />
+                    <Setter Property="Foreground" Value="#F9FAFB" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
         <DataTemplate x:Key="CountryItemTemplate">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -191,6 +285,7 @@
                             <Button Content="P1 -1" Click="P1Down_Click" />
                             <Button Content="P2 +1" Click="P2Up_Click" />
                             <Button Content="P2 -1" Click="P2Down_Click" />
+                            <Button Content="Commit to Challonge" Click="CommitToChallonge_Click" />
                         </StackPanel>
                     </GroupBox>
 
@@ -198,9 +293,29 @@
                         <StackPanel>
                             <Button Content="Swap P1 with P2" Click="Swap_Click" />
                             <Button Content="Reset Match" Click="Reset_Click" />
+                            <Button Content="Load Previous" Click="Previous_Click" />
                             <Button Content="Load Next" Click="Next_Click" />
                             <Button Content="Undo" Click="Undo_Click" />
                             <Button Content="Redo" Click="Redo_Click" />
+                        </StackPanel>
+                    </GroupBox>
+
+                    <GroupBox Header="Challonge Queue" Margin="4">
+                        <StackPanel>
+                            <Label Content="Tournament" />
+                            <TextBox Name="ChallongeTournamentBox" />
+                            <Label Content="API Key" />
+                            <TextBox Name="ChallongeApiKeyBox" />
+                            <Button Content="Refresh Queue from Challonge" Click="RefreshQueueButton_Click" />
+                            <Button Content="Load Next Queue Match" Click="LoadNextQueueButton_Click" />
+                            <Label Name="QueuePositionLabel"
+                                   Content="Queue position: not loaded"
+                                   Foreground="#D1D5DB"
+                                   FontWeight="Normal" />
+                            <ListBox Name="QueueListBox"
+                                     Margin="6"
+                                     Height="220"
+                                     MouseDoubleClick="QueueListBox_MouseDoubleClick" />
                         </StackPanel>
                     </GroupBox>
                 </StackPanel>
