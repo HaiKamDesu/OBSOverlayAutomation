@@ -13,7 +13,7 @@ public partial class PlayerEditWindow : Window
     {
         InitializeComponent();
 
-        foreach (var entry in countries.OrderBy(x => x.Id.ToString()))
+        foreach (var entry in countries.OrderBy(x => x.Acronym, StringComparer.OrdinalIgnoreCase))
             _countries.Add(entry);
 
         CountryBox.ItemsSource = _countries;
@@ -25,12 +25,14 @@ public partial class PlayerEditWindow : Window
             CharactersBox.Text = profile.Characters;
             AliasesBox.Text = string.Join(", ", profile.Aliases);
 
-            if (Enum.TryParse<CountryId>(profile.Country, true, out var id))
-                CountryBox.SelectedItem = _countries.FirstOrDefault(x => x.Id == id);
+            CountryBox.SelectedItem = _countries.FirstOrDefault(x =>
+                string.Equals(x.Acronym, profile.Country, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(x.Id.ToString(), profile.Country, StringComparison.OrdinalIgnoreCase));
         }
         else
         {
-            CountryBox.SelectedItem = _countries.FirstOrDefault(x => x.Id == CountryId.Unknown);
+            CountryBox.SelectedItem = _countries.FirstOrDefault(x => string.IsNullOrWhiteSpace(x.Acronym))
+                ?? _countries.FirstOrDefault();
         }
     }
 
@@ -40,7 +42,7 @@ public partial class PlayerEditWindow : Window
         var team = TeamBox.Text?.Trim() ?? string.Empty;
         var characters = CharactersBox.Text?.Trim() ?? string.Empty;
         var aliases = ParseAliases(AliasesBox.Text);
-        var country = (CountryBox.SelectedItem as CountryInfo)?.Id.ToString() ?? CountryId.Unknown.ToString();
+        var country = (CountryBox.SelectedItem as CountryInfo)?.Acronym?.Trim() ?? string.Empty;
 
         Result = new PlayerProfile
         {

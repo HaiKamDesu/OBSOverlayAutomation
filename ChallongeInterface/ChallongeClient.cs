@@ -155,6 +155,69 @@ public sealed class ChallongeClient
         return envelope.Match;
     }
 
+    public async Task<Match> UpdateMatchStateAsync(
+        string tournament,
+        long matchId,
+        string state,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(tournament))
+            throw new ArgumentException("Tournament is required.", nameof(tournament));
+        if (string.IsNullOrWhiteSpace(state))
+            throw new ArgumentException("state is required.", nameof(state));
+
+        var path = $"tournaments/{Uri.EscapeDataString(tournament)}/matches/{matchId}.json";
+        var requestUri = BuildUri(path, new Dictionary<string, string?>());
+        var body = new Dictionary<string, string>
+        {
+            ["match[state]"] = state
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, requestUri)
+        {
+            Content = new FormUrlEncodedContent(body)
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var payload = await ReadOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+
+        var envelope = JsonConvert.DeserializeObject<MatchEnvelope>(payload);
+        if (envelope?.Match is null)
+            throw new InvalidOperationException("Challonge API returned an empty match payload.");
+
+        return envelope.Match;
+    }
+
+    public async Task<Match> MatchActionAsync(
+        string tournament,
+        long matchId,
+        string action,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(tournament))
+            throw new ArgumentException("Tournament is required.", nameof(tournament));
+        if (string.IsNullOrWhiteSpace(action))
+            throw new ArgumentException("action is required.", nameof(action));
+
+        var path = $"tournaments/{Uri.EscapeDataString(tournament)}/matches/{matchId}/{Uri.EscapeDataString(action)}.json";
+        var requestUri = BuildUri(path, new Dictionary<string, string?>());
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>())
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var payload = await ReadOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+
+        var envelope = JsonConvert.DeserializeObject<MatchEnvelope>(payload);
+        if (envelope?.Match is null)
+            throw new InvalidOperationException("Challonge API returned an empty match payload.");
+
+        return envelope.Match;
+    }
+
     private Uri BuildUri(string relativePath, Dictionary<string, string?> query)
     {
         query["api_key"] = _apiKey;

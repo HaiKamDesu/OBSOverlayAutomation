@@ -1,5 +1,9 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Windows.Data;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
 using TournamentAutomation.Domain;
 
 namespace TournamentAutomation.Ui;
@@ -11,19 +15,29 @@ public partial class PlayerSelectWindow : Window
     private readonly PlayerDatabase _database;
     private readonly string _databasePath;
     private readonly IReadOnlyList<CountryInfo> _countries;
+    private readonly bool _doubleClickSelectsPlayer;
+    private string _activeSortProperty = "Name";
+    private ListSortDirection _activeSortDirection = ListSortDirection.Ascending;
 
     public PlayerSelectWindow(
         ObservableCollection<PlayerProfile> players,
         PlayerDatabase database,
         string databasePath,
-        IReadOnlyList<CountryInfo> countries)
+        IReadOnlyList<CountryInfo> countries,
+        bool doubleClickSelectsPlayer = false)
     {
         InitializeComponent();
         _players = players;
         _database = database;
         _databasePath = databasePath;
         _countries = countries;
+        _doubleClickSelectsPlayer = doubleClickSelectsPlayer;
         PlayersList.ItemsSource = players;
+        PlayersList.AddHandler(GridViewColumnHeader.ClickEvent, new RoutedEventHandler(PlayersColumnHeader_Click));
+        ApplySort("Name", ListSortDirection.Ascending);
+        Loaded += (_, _) => AutoSizeColumns();
+        PlayersList.SizeChanged += (_, _) => AutoSizeColumns();
+        _players.CollectionChanged += (_, _) => ScheduleAutoSizeColumns();
     }
 
     private void Select_Click(object sender, RoutedEventArgs e)
@@ -59,6 +73,51 @@ public partial class PlayerSelectWindow : Window
             return;
         }
 
+        EditSelectedProfile(selected);
+    }
+
+    private void PlayersList_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (PlayersList.SelectedItem is not PlayerProfile selected)
+            return;
+
+        if (_doubleClickSelectsPlayer)
+        {
+            SelectedProfile = selected;
+            DialogResult = true;
+            return;
+        }
+
+        EditSelectedProfile(selected);
+    }
+
+    private void PlayersColumnHeader_Click(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is not GridViewColumnHeader header)
+            return;
+
+        var label = header.Content?.ToString() ?? string.Empty;
+        var property = label switch
+        {
+            "Nickname" => "Name",
+            "Team" => "Team",
+            "Country" => "Country",
+            "Characters" => "Characters",
+            "Aliases" => "AliasesDisplay",
+            _ => string.Empty
+        };
+        if (string.IsNullOrWhiteSpace(property))
+            return;
+
+        var nextDirection = string.Equals(_activeSortProperty, property, StringComparison.Ordinal)
+            && _activeSortDirection == ListSortDirection.Ascending
+            ? ListSortDirection.Descending
+            : ListSortDirection.Ascending;
+        ApplySort(property, nextDirection);
+    }
+
+    private void EditSelectedProfile(PlayerProfile selected)
+    {
         var dialog = new PlayerEditWindow(_countries, selected);
         dialog.Owner = this;
         if (dialog.ShowDialog() == true && dialog.Result is not null)
@@ -89,6 +148,7 @@ public partial class PlayerSelectWindow : Window
 
         _players.Remove(selected);
         PlayerDatabaseStore.Save(_databasePath, _database);
+        AutoSizeColumns();
     }
 
     private void AddProfile(PlayerProfile profile)
@@ -116,6 +176,7 @@ public partial class PlayerSelectWindow : Window
         _players.Add(profile);
         ResortPlayers();
         PlayerDatabaseStore.Save(_databasePath, _database);
+        AutoSizeColumns();
     }
 
     private void UpdateProfile(PlayerProfile original, PlayerProfile updated)
@@ -162,6 +223,7 @@ public partial class PlayerSelectWindow : Window
 
         ResortPlayers();
         PlayerDatabaseStore.Save(_databasePath, _database);
+        AutoSizeColumns();
     }
 
     private void ResortPlayers()
@@ -170,6 +232,8 @@ public partial class PlayerSelectWindow : Window
         _players.Clear();
         foreach (var profile in ordered)
             _players.Add(profile);
+        ApplySort(_activeSortProperty, _activeSortDirection);
+        ScheduleAutoSizeColumns();
     }
 
     private string? FindAliasConflict(PlayerProfile candidate, PlayerProfile? existingProfile)
@@ -196,5 +260,44 @@ public partial class PlayerSelectWindow : Window
         }
 
         return null;
+    }
+
+    private void ScheduleAutoSizeColumns()
+    {
+        _ = Dispatcher.InvokeAsync(AutoSizeColumns, DispatcherPriority.Background);
+    }
+
+    private void AutoSizeColumns()
+    {
+        if (PlayersList.View is not GridView gridView)
+            return;
+
+        foreach (var column in gridView.Columns)
+        {
+            column.Width = double.NaN;
+            var measured = column.ActualWidth;
+            if (double.IsNaN(measured) || measured <= 0)
+                continue;
+
+            column.Width = measured + 12;
+        }
+    }
+
+    private void ApplySort(string propertyName, ListSortDirection direction)
+    {
+        var view = CollectionViewSource.GetDefaultView(PlayersList.ItemsSource);
+        if (view is null)
+            return;
+
+        _activeSortProperty = propertyName;
+        _activeSortDirection = direction;
+
+        using (view.DeferRefresh())
+        {
+            view.SortDescriptions.Clear();
+            view.SortDescriptions.Add(new SortDescription(propertyName, direction));
+        }
+
+        ScheduleAutoSizeColumns();
     }
 }

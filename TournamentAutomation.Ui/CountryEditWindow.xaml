@@ -1,0 +1,42 @@
+<Window x:Class="TournamentAutomation.Ui.CountryEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Country Editor"
+        Height="260"
+        Width="640"
+        MinHeight="240"
+        MinWidth="560"
+        Background="#101315"
+        Foreground="#EAEAEA"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,8,8,4" Foreground="#9CA3AF" FontWeight="SemiBold" Text="Code" VerticalAlignment="Center" />
+        <TextBox x:Name="CodeBox" Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,4,0,4" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,8,8,4" Foreground="#9CA3AF" FontWeight="SemiBold" Text="Name" VerticalAlignment="Center" />
+        <TextBox x:Name="NameBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,4,0,4" />
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,8,8,4" Foreground="#9CA3AF" FontWeight="SemiBold" Text="Flag Path" VerticalAlignment="Center" />
+        <TextBox x:Name="FlagPathBox" Grid.Row="2" Grid.Column="1" Margin="0,4,8,4" />
+        <Button Grid.Row="2" Grid.Column="2" Content="Browse..." Width="90" Margin="0,4,0,4" Click="Browse_Click" />
+
+        <StackPanel Grid.Row="4" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Cancel" Width="90" Margin="6" Click="Cancel_Click" />
+            <Button Content="Save" Width="90" Margin="6" Click="Save_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

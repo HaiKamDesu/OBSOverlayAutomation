@@ -127,7 +127,8 @@
         <DataTemplate x:Key="CountryItemTemplate">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <Image Source="{Binding FlagPath}" Width="22" Height="16" Margin="0,0,8,0" Stretch="UniformToFill" />
-                <TextBlock Text="{Binding Id}" VerticalAlignment="Center" Foreground="#E9EEF6" />
+                <TextBlock Text="{Binding Acronym}" VerticalAlignment="Center" Foreground="#E9EEF6" />
+                <TextBlock Text="{Binding DisplayName}" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="#A6B2C4" />
             </StackPanel>
         </DataTemplate>
 
