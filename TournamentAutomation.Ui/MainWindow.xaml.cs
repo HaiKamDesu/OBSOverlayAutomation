@@ -1529,6 +1529,15 @@ public partial class MainWindow : Window
         return count <= 0 ? "Characters" : $"Characters ({count})";
     }
 
+    private static CountryInfo CreateUnknownCountry()
+        => new()
+        {
+            Id = CountryId.Unknown,
+            Acronym = "???",
+            DisplayName = "Unknown",
+            FlagPath = string.Empty
+        };
+
     private static bool IsUnknownCountry(CountryInfo? country)
         => country is null
            || string.IsNullOrWhiteSpace(country.Acronym)
@@ -1538,7 +1547,7 @@ public partial class MainWindow : Window
     {
         var key = codeOrId?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(key))
-            return _countries.FirstOrDefault(IsUnknownCountry) ?? new CountryInfo();
+            return _countries.FirstOrDefault(IsUnknownCountry) ?? CreateUnknownCountry();
 
         var byCode = _countries.FirstOrDefault(country =>
             string.Equals(country.Acronym, key, StringComparison.OrdinalIgnoreCase));
@@ -1552,7 +1561,7 @@ public partial class MainWindow : Window
                 return byId;
         }
 
-        return _countries.FirstOrDefault(IsUnknownCountry) ?? new CountryInfo();
+        return _countries.FirstOrDefault(IsUnknownCountry) ?? CreateUnknownCountry();
     }
 
     private CountryInfo? ResolveCountrySelection(PlayerInfo player)
@@ -1594,7 +1603,7 @@ public partial class MainWindow : Window
                 .ToList();
 
             if (!custom.Any(IsUnknownCountry))
-                custom.Insert(0, new CountryInfo { Id = CountryId.Unknown, Acronym = string.Empty, DisplayName = "Unknown", FlagPath = string.Empty });
+                custom.Insert(0, CreateUnknownCountry());
 
             return custom;
         }
@@ -1607,7 +1616,7 @@ public partial class MainWindow : Window
             })
             .ToList();
         if (!configCountries.Any(IsUnknownCountry))
-            configCountries.Insert(0, new CountryInfo { Id = CountryId.Unknown, Acronym = string.Empty, DisplayName = "Unknown", FlagPath = string.Empty });
+            configCountries.Insert(0, CreateUnknownCountry());
 
         return configCountries;
     }
@@ -1708,7 +1717,7 @@ public partial class MainWindow : Window
         }
 
         if (!metadataCountries.ContainsKey(CountryId.Unknown))
-            metadataCountries[CountryId.Unknown] = new CountryInfo { Id = CountryId.Unknown, Acronym = string.Empty, DisplayName = "Unknown", FlagPath = string.Empty };
+            metadataCountries[CountryId.Unknown] = CreateUnknownCountry();
         var metadata = new OverlayMetadata
         {
             Countries = metadataCountries,
@@ -1758,13 +1767,19 @@ public partial class MainWindow : Window
     private void RenderSceneButtons()
     {
         SceneButtonsPanel.Children.Clear();
-        SceneButtonsPanel.Children.Add(new TextBlock
+        var labelText = new TextBlock
         {
             Text = "Scenes:",
             Foreground = (SolidColorBrush)new BrushConverter().ConvertFromString("#9CA3AF")!,
             FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        SceneButtonsPanel.Children.Add(new Border
+        {
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(4, 8, 8, 0)
+            Margin = new Thickness(4),
+            Padding = new Thickness(10, 6, 10, 6),
+            Child = labelText
         });
 
         foreach (var scene in GetConfiguredSceneButtons())
@@ -2151,7 +2166,7 @@ public partial class MainWindow : Window
         _settings.Countries = window.ResultCountries.ToList();
 
         if (_settings.Countries.All(country => !string.IsNullOrWhiteSpace(country.Code)))
-            _settings.Countries.Insert(0, new CountrySetting { Code = string.Empty, Name = "Unknown", FlagPath = string.Empty });
+            _settings.Countries.Insert(0, new CountrySetting { Code = "???", Name = "Unknown", FlagPath = string.Empty });
 
         PersistSettings();
         ShowActionToast("Countries updated.", ToastKind.Success);

@@ -8,7 +8,15 @@ public sealed class OverlayMetadata
     public Dictionary<FGCharacterId, FGCharacterInfo> Characters { get; init; } = new();
 
     public CountryInfo GetCountry(CountryId id)
-        => Countries.TryGetValue(id, out var info) ? info : new CountryInfo { Id = CountryId.Unknown };
+        => Countries.TryGetValue(id, out var info)
+            ? info
+            : new CountryInfo
+            {
+                Id = CountryId.Unknown,
+                Acronym = "???",
+                DisplayName = "Unknown",
+                FlagPath = string.Empty
+            };
 
     public FGCharacterInfo GetCharacter(FGCharacterId id)
         => Characters.TryGetValue(id, out var info) ? info : new FGCharacterInfo { Id = FGCharacterId.Unknown };
