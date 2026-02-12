@@ -9,13 +9,17 @@ using TournamentAutomation.Presentation;
 using System.Windows;
 using System.Net.Http;
 using System.Text;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using TournamentAutomation.Configuration;
 
 namespace TournamentAutomation.Ui;
 
 public partial class MainWindow : Window
 {
-    private readonly AutomationHost _host;
+    private readonly ConsoleAppLogger _logger;
+    private AutomationHost _host;
     private readonly ObservableCollection<CountryInfo> _countries = new();
     private readonly ObservableCollection<PlayerProfile> _playerProfiles = new();
     private readonly ObservableCollection<string> _queueRows = new();
@@ -30,8 +34,14 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        var logger = new ConsoleAppLogger();
-        _host = new AutomationHost(ConfigScript.Build(), logger);
+        _settingsPath = GetSettingsPath();
+        _settings = UserSettingsStore.Load(_settingsPath);
+        _playerDatabasePath = string.IsNullOrWhiteSpace(_settings.PlayerDatabasePath)
+            ? GetDefaultPlayerDatabasePath()
+            : _settings.PlayerDatabasePath;
+
+        _logger = new ConsoleAppLogger();
+        _host = new AutomationHost(BuildRuntimeConfig(), _logger);
 
         foreach (var entry in _host.Config.Metadata.Countries.Values.OrderBy(x => x.Id.ToString()))
             _countries.Add(entry);
@@ -41,12 +51,6 @@ public partial class MainWindow : Window
 
         P1Country.SelectedItem = _countries.FirstOrDefault(x => x.Id == CountryId.Unknown);
         P2Country.SelectedItem = _countries.FirstOrDefault(x => x.Id == CountryId.Unknown);
-
-        _settingsPath = GetSettingsPath();
-        _settings = UserSettingsStore.Load(_settingsPath);
-        _playerDatabasePath = string.IsNullOrWhiteSpace(_settings.PlayerDatabasePath)
-            ? GetDefaultPlayerDatabasePath()
-            : _settings.PlayerDatabasePath;
 
         LoadPlayerDatabase();
 
@@ -60,16 +64,39 @@ public partial class MainWindow : Window
             ?? string.Empty;
 
         UpdateQueueListVisuals();
+        UpdateCharacterButtonLabels();
+        SyncScoreDisplaysFromState();
+        Loaded += MainWindow_Loaded;
+    }
+
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        await RefreshObsStatusAsync();
+        await RefreshChallongeQueueAsync(showMissingCredentialsWarning: false, showErrorDialog: false);
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!HasObsCredentials())
+        {
+            SetObsStatus("No Credentials", "#FACC15");
+            MessageBox.Show("Configure OBS credentials first.", "OBS", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
         var ok = await _host.ConnectAsync(CancellationToken.None);
-        StatusLabel.Content = ok ? "Connected" : "Disconnected";
+        SetObsStatus(ok ? "Connected" : "Disconnected", ok ? "#22C55E" : "#EF4444");
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
+        var p1Country = (P1Country.SelectedItem as CountryInfo)?.Id ?? CountryId.Unknown;
+        var p2Country = (P2Country.SelectedItem as CountryInfo)?.Id ?? CountryId.Unknown;
+        var p1 = BuildPlayer(P1Name.Text, P1Team.Text, p1Country, P1Characters.Text);
+        var p2 = BuildPlayer(P2Name.Text, P2Team.Text, p2Country, P2Characters.Text);
+
+        await _host.SetPlayerAsync(true, p1, CancellationToken.None);
+        await _host.SetPlayerAsync(false, p2, CancellationToken.None);
         await _host.RefreshOverlayAsync(CancellationToken.None);
     }
 
@@ -119,40 +146,60 @@ public partial class MainWindow : Window
     {
         await _host.AdjustScoreAsync(true, 1, CancellationToken.None);
         PersistCurrentQueueEntryStateFromHost();
+        SyncScoreDisplaysFromState();
     }
 
     private async void P1Down_Click(object sender, RoutedEventArgs e)
     {
         await _host.AdjustScoreAsync(true, -1, CancellationToken.None);
         PersistCurrentQueueEntryStateFromHost();
+        SyncScoreDisplaysFromState();
     }
 
     private async void P2Up_Click(object sender, RoutedEventArgs e)
     {
         await _host.AdjustScoreAsync(false, 1, CancellationToken.None);
         PersistCurrentQueueEntryStateFromHost();
+        SyncScoreDisplaysFromState();
     }
 
     private async void P2Down_Click(object sender, RoutedEventArgs e)
     {
         await _host.AdjustScoreAsync(false, -1, CancellationToken.None);
         PersistCurrentQueueEntryStateFromHost();
+        SyncScoreDisplaysFromState();
     }
 
     private async void CommitToChallonge_Click(object sender, RoutedEventArgs e)
         => await CommitCurrentMatchToChallongeAsync();
 
     private async void Swap_Click(object sender, RoutedEventArgs e)
-        => await _host.SwapPlayersAsync(CancellationToken.None);
+    {
+        var current = _host.State.CurrentMatch;
+        var swapped = current with
+        {
+            Player1 = current.Player2,
+            Player2 = current.Player1
+        };
+
+        await _host.SetCurrentMatchAsync(swapped, CancellationToken.None);
+        SwapPlayerFieldValues();
+        PersistCurrentQueueEntryStateFromHost();
+        SyncScoreDisplaysFromState();
+    }
 
     private async void Reset_Click(object sender, RoutedEventArgs e)
-        => await _host.ResetMatchAsync(CancellationToken.None);
+    {
+        await _host.ResetMatchAsync(CancellationToken.None);
+        SyncScoreDisplaysFromState();
+    }
 
     private async void Next_Click(object sender, RoutedEventArgs e)
     {
         if (_challongeQueueEntries.Count == 0)
         {
             await _host.LoadNextAsync(CancellationToken.None);
+            SyncScoreDisplaysFromState();
             return;
         }
 
@@ -188,16 +235,28 @@ public partial class MainWindow : Window
     }
 
     private async void Undo_Click(object sender, RoutedEventArgs e)
-        => await _host.UndoAsync(CancellationToken.None);
+    {
+        await _host.UndoAsync(CancellationToken.None);
+        SyncScoreDisplaysFromState();
+    }
 
     private async void Redo_Click(object sender, RoutedEventArgs e)
-        => await _host.RedoAsync(CancellationToken.None);
+    {
+        await _host.RedoAsync(CancellationToken.None);
+        SyncScoreDisplaysFromState();
+    }
 
     private async void SetP1_Click(object sender, RoutedEventArgs e)
         => await SelectAndApplyProfileAsync(isPlayerOne: true);
 
     private async void SetP2_Click(object sender, RoutedEventArgs e)
         => await SelectAndApplyProfileAsync(isPlayerOne: false);
+
+    private void P1CharactersButton_Click(object sender, RoutedEventArgs e)
+        => EditCharacters(isPlayerOne: true);
+
+    private void P2CharactersButton_Click(object sender, RoutedEventArgs e)
+        => EditCharacters(isPlayerOne: false);
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
@@ -218,10 +277,47 @@ public partial class MainWindow : Window
         LoadPlayerDatabase();
     }
 
-    private async void RefreshQueueButton_Click(object sender, RoutedEventArgs e)
-        => await RefreshChallongeQueueAsync();
+    private void SettingsCogButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SettingsCogButton.ContextMenu is null)
+            return;
 
-    private async Task RefreshChallongeQueueAsync()
+        SettingsCogButton.ContextMenu.PlacementTarget = SettingsCogButton;
+        SettingsCogButton.ContextMenu.IsOpen = true;
+    }
+
+    private async void ObsCredsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ShowObsCredentialsDialog())
+            return;
+
+        await RefreshObsStatusAsync();
+    }
+
+    private async void ChallongeCredsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ShowChallongeCredentialsDialog())
+            return;
+
+        await RefreshChallongeQueueAsync(showMissingCredentialsWarning: false, showErrorDialog: true);
+    }
+
+    private void OpenPlayerDatabaseButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new PlayerSelectWindow(_playerProfiles, _playerDatabase, _playerDatabasePath, _countries)
+        {
+            Owner = this,
+            Title = "Manage Player Database"
+        };
+
+        _ = dialog.ShowDialog();
+        LoadPlayerDatabase();
+    }
+
+    private async void RefreshQueueButton_Click(object sender, RoutedEventArgs e)
+        => await RefreshChallongeQueueAsync(showMissingCredentialsWarning: true, showErrorDialog: true);
+
+    private async Task RefreshChallongeQueueAsync(bool showMissingCredentialsWarning, bool showErrorDialog)
     {
         var tournament = ChallongeTournamentBox.Text.Trim();
         var apiKey = ChallongeApiKeyBox.Text.Trim();
@@ -231,11 +327,15 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(tournament) || string.IsNullOrWhiteSpace(apiKey))
         {
-            MessageBox.Show(
-                "Enter both Challonge tournament and API key before refreshing.",
-                "Challonge Queue",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            SetChallongeStatus("No Credentials", "#FACC15");
+            if (showMissingCredentialsWarning)
+            {
+                MessageBox.Show(
+                    "Enter both Challonge tournament and API key before refreshing.",
+                    "Challonge Queue",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
             return;
         }
 
@@ -244,6 +344,7 @@ public partial class MainWindow : Window
         UserSettingsStore.Save(_settingsPath, _settings);
 
         QueuePositionLabel.Content = "Queue position: loading...";
+        SetChallongeStatus("Checking...", "#FACC15");
 
         try
         {
@@ -285,17 +386,17 @@ public partial class MainWindow : Window
                     var current = _host.State.CurrentMatch;
                     _currentQueueIndex = _challongeQueueEntries.FindIndex(entry => IsSameMatch(entry.GetDisplayMatch(), current));
                 }
-
-                if (_currentQueueIndex < 0)
-                    _currentQueueIndex = 0;
             }
 
             UpdateQueueListVisuals();
+            SetChallongeStatus("Connected", "#22C55E");
         }
         catch (Exception ex)
         {
             QueuePositionLabel.Content = "Queue position: failed to refresh";
-            MessageBox.Show(ex.Message, "Challonge Queue", MessageBoxButton.OK, MessageBoxImage.Error);
+            SetChallongeStatus("Disconnected", "#EF4444");
+            if (showErrorDialog)
+                MessageBox.Show(ex.Message, "Challonge Queue", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -319,6 +420,7 @@ public partial class MainWindow : Window
         _currentQueueIndex = targetIndex;
         ApplyMatchToFields(match, entry);
         UpdateQueueListVisuals();
+        SyncScoreDisplaysFromState();
     }
 
     private void UpdateQueueListVisuals()
@@ -476,12 +578,20 @@ public partial class MainWindow : Window
         if (!IsPlaceholderName(entry.RawPlayer2Name) && p2 is null)
             return null;
 
+        var player1 = ToPlayerInfo(p1, entry.RawPlayer1Name);
+        var player2 = ToPlayerInfo(p2, entry.RawPlayer2Name);
+        if (TryParseDisplayedScores(entry.ChallongeScoresCsv, out var p1Score, out var p2Score))
+        {
+            player1 = player1 with { Score = p1Score };
+            player2 = player2 with { Score = p2Score };
+        }
+
         entry.ResolvedMatch = new MatchState
         {
             RoundLabel = entry.RoundLabel,
             Format = MatchSetFormat.FT2,
-            Player1 = ToPlayerInfo(p1, entry.RawPlayer1Name),
-            Player2 = ToPlayerInfo(p2, entry.RawPlayer2Name)
+            Player1 = player1,
+            Player2 = player2
         };
         entry.Player1CharactersText = p1?.Characters;
         entry.Player2CharactersText = p2?.Characters;
@@ -574,13 +684,22 @@ public partial class MainWindow : Window
             entry.ChallongeWinnerId = winnerId;
             entry.ChallongeState = "complete";
             entry.IsReportedToChallonge = true;
-            UpdateQueueListVisuals();
+            await RefreshChallongeQueueAsync(showMissingCredentialsWarning: false, showErrorDialog: true);
             MessageBox.Show($"Committed score '{scoreCsv}' to Challonge.", "Commit to Challonge", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
             MessageBox.Show(ex.Message, "Commit to Challonge", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private void SwapPlayerFieldValues()
+    {
+        (P1Team.Text, P2Team.Text) = (P2Team.Text, P1Team.Text);
+        (P1Name.Text, P2Name.Text) = (P2Name.Text, P1Name.Text);
+        (P1Characters.Text, P2Characters.Text) = (P2Characters.Text, P1Characters.Text);
+        (P1Country.SelectedItem, P2Country.SelectedItem) = (P2Country.SelectedItem, P1Country.SelectedItem);
+        UpdateCharacterButtonLabels();
     }
 
     private PlayerProfile? FindProfileByNameOrAlias(string challongeName)
@@ -735,6 +854,9 @@ public partial class MainWindow : Window
 
         P2Country.SelectedItem = _countries.FirstOrDefault(x => x.Id == match.Player2.Country)
             ?? _countries.FirstOrDefault(x => x.Id == CountryId.Unknown);
+
+        UpdateCharacterButtonLabels();
+        SyncScoreDisplaysFromState();
     }
 
     private static string ResolveCharactersText(PlayerInfo player, string? entryCharactersText)
@@ -826,6 +948,7 @@ public partial class MainWindow : Window
         nameBox.Text = profile.Name ?? string.Empty;
         teamBox.Text = profile.Team ?? string.Empty;
         charactersBox.Text = profile.Characters ?? string.Empty;
+        UpdateCharacterButtonLabels();
 
         if (Enum.TryParse<CountryId>(profile.Country, true, out var id))
             countryBox.SelectedItem = _countries.FirstOrDefault(x => x.Id == id);
@@ -934,6 +1057,321 @@ public partial class MainWindow : Window
 
         PlayerDatabaseStore.Save(_playerDatabasePath, _playerDatabase);
         RefreshPlayerProfiles();
+    }
+
+    private void EditCharacters(bool isPlayerOne)
+    {
+        var charactersBox = isPlayerOne ? P1Characters : P2Characters;
+        var existing = charactersBox.Text
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var available = Enum.GetValues<FGCharacterId>()
+            .Where(id => id != FGCharacterId.Unknown)
+            .Select(id => id.ToString())
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var selectedCharacters = new ObservableCollection<string>(existing);
+
+        var panel = new StackPanel { Margin = new Thickness(14) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = isPlayerOne ? "Edit P1 Characters" : "Edit P2 Characters",
+            Foreground = Brushes.LightGray,
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+
+        var pickerRow = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+        pickerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        pickerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var picker = new ComboBox { ItemsSource = available, SelectedIndex = available.Count > 0 ? 0 : -1, MinWidth = 180 };
+        var addButton = new Button { Content = "Add", Padding = new Thickness(10, 4, 10, 4) };
+        Grid.SetColumn(addButton, 1);
+        pickerRow.Children.Add(picker);
+        pickerRow.Children.Add(addButton);
+        panel.Children.Add(pickerRow);
+
+        var selectedList = new ListBox { Height = 150, ItemsSource = selectedCharacters, Margin = new Thickness(0, 0, 0, 8) };
+        panel.Children.Add(selectedList);
+
+        var actionRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
+        var removeButton = new Button { Content = "Remove Selected", Padding = new Thickness(10, 4, 10, 4) };
+        var clearButton = new Button { Content = "Clear All", Padding = new Thickness(10, 4, 10, 4) };
+        actionRow.Children.Add(removeButton);
+        actionRow.Children.Add(clearButton);
+        panel.Children.Add(actionRow);
+
+        var saveButton = new Button { Content = "Save", Width = 88, Margin = new Thickness(4) };
+        var cancelButton = new Button { Content = "Cancel", Width = 88, Margin = new Thickness(4) };
+        var buttonRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttonRow.Children.Add(saveButton);
+        buttonRow.Children.Add(cancelButton);
+        panel.Children.Add(buttonRow);
+
+        var window = new Window
+        {
+            Owner = this,
+            Title = "Characters",
+            Content = panel,
+            Width = 360,
+            Height = 380,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            Background = (SolidColorBrush)new BrushConverter().ConvertFromString("#101315")!,
+            Foreground = Brushes.White
+        };
+
+        addButton.Click += (_, _) =>
+        {
+            if (picker.SelectedItem is not string choice || string.IsNullOrWhiteSpace(choice))
+                return;
+
+            if (!selectedCharacters.Any(existingCharacter =>
+                    string.Equals(existingCharacter, choice, StringComparison.OrdinalIgnoreCase)))
+                selectedCharacters.Add(choice);
+        };
+        removeButton.Click += (_, _) =>
+        {
+            if (selectedList.SelectedItem is string selected)
+                selectedCharacters.Remove(selected);
+        };
+        clearButton.Click += (_, _) => selectedCharacters.Clear();
+        saveButton.Click += (_, _) => window.DialogResult = true;
+        cancelButton.Click += (_, _) => window.DialogResult = false;
+
+        if (window.ShowDialog() != true)
+            return;
+
+        charactersBox.Text = string.Join(", ", selectedCharacters);
+        PersistEditedCharactersToDatabase(isPlayerOne, charactersBox.Text);
+        UpdateCharacterButtonLabels();
+    }
+
+    private void PersistEditedCharactersToDatabase(bool isPlayerOne, string charactersText)
+    {
+        var name = (isPlayerOne ? P1Name.Text : P2Name.Text)?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        var existing = _playerDatabase.Players.FirstOrDefault(player =>
+            string.Equals(player.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (existing is null)
+            return;
+
+        existing.Characters = charactersText;
+        PlayerDatabaseStore.Save(_playerDatabasePath, _playerDatabase);
+        RefreshPlayerProfiles();
+    }
+
+    private void UpdateCharacterButtonLabels()
+    {
+        P1CharactersButton.Content = BuildCharacterButtonText(P1Characters.Text);
+        P2CharactersButton.Content = BuildCharacterButtonText(P2Characters.Text);
+    }
+
+    private static string BuildCharacterButtonText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "Characters";
+
+        var count = value
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Count(token => !string.IsNullOrWhiteSpace(token));
+        return count <= 0 ? "Characters" : $"Characters ({count})";
+    }
+
+    private AppConfig BuildRuntimeConfig()
+    {
+        var config = ConfigScript.Build();
+        var obsUrl = string.IsNullOrWhiteSpace(_settings.ObsUrl)
+            ? (Environment.GetEnvironmentVariable("OBS_WS_URL") ?? string.Empty)
+            : _settings.ObsUrl.Trim();
+        var obsPassword = _settings.ObsPassword
+            ?? Environment.GetEnvironmentVariable("OBS_WS_PASSWORD")
+            ?? string.Empty;
+
+        return config with
+        {
+            Obs = config.Obs with
+            {
+                Url = obsUrl,
+                Password = obsPassword
+            }
+        };
+    }
+
+    private bool HasObsCredentials()
+        => !string.IsNullOrWhiteSpace(_host.Config.Obs.Url);
+
+    private bool HasChallongeCredentials()
+        => !string.IsNullOrWhiteSpace(ChallongeTournamentBox.Text?.Trim())
+           && !string.IsNullOrWhiteSpace(ChallongeApiKeyBox.Text?.Trim());
+
+    private async Task RefreshObsStatusAsync()
+    {
+        if (!HasObsCredentials())
+        {
+            SetObsStatus("No Credentials", "#FACC15");
+            return;
+        }
+
+        var connected = await _host.ConnectAsync(CancellationToken.None);
+        SetObsStatus(connected ? "Connected" : "Disconnected", connected ? "#22C55E" : "#EF4444");
+    }
+
+    private void SyncScoreDisplaysFromState()
+    {
+        var current = _host.State.CurrentMatch;
+        P1ScoreValue.Text = current.Player1.Score.ToString();
+        P2ScoreValue.Text = current.Player2.Score.ToString();
+    }
+
+    private void SetObsStatus(string text, string colorHex)
+    {
+        ObsStatusValue.Text = text;
+        ObsStatusValue.Foreground = (SolidColorBrush)new BrushConverter().ConvertFromString(colorHex)!;
+    }
+
+    private void SetChallongeStatus(string text, string colorHex)
+    {
+        ChallongeStatusValue.Text = text;
+        ChallongeStatusValue.Foreground = (SolidColorBrush)new BrushConverter().ConvertFromString(colorHex)!;
+    }
+
+    private bool ShowObsCredentialsDialog()
+    {
+        var panel = new StackPanel { Margin = new Thickness(14) };
+        panel.Children.Add(new TextBlock { Text = "OBS WebSocket URL", Foreground = Brushes.LightGray, Margin = new Thickness(0, 0, 0, 4) });
+        var urlBox = new TextBox
+        {
+            Text = string.IsNullOrWhiteSpace(_settings.ObsUrl)
+                ? _host.Config.Obs.Url
+                : _settings.ObsUrl
+        };
+        panel.Children.Add(urlBox);
+        panel.Children.Add(new TextBlock { Text = "OBS Password", Foreground = Brushes.LightGray, Margin = new Thickness(0, 8, 0, 4) });
+        var passwordBox = new PasswordBox
+        {
+            Margin = new Thickness(4),
+            Padding = new Thickness(6),
+            Background = (SolidColorBrush)new BrushConverter().ConvertFromString("#0B0F12")!,
+            Foreground = Brushes.White,
+            BorderBrush = (SolidColorBrush)new BrushConverter().ConvertFromString("#334155")!
+        };
+        passwordBox.Password = _settings.ObsPassword ?? string.Empty;
+        panel.Children.Add(passwordBox);
+
+        var connectButton = new Button { Content = "Connect to OBS", Margin = new Thickness(4) };
+        var saveButton = new Button { Content = "Save", Width = 88, Margin = new Thickness(4) };
+        var cancelButton = new Button { Content = "Cancel", Width = 88, Margin = new Thickness(4) };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(connectButton);
+        buttons.Children.Add(saveButton);
+        buttons.Children.Add(cancelButton);
+        panel.Children.Add(buttons);
+
+        var window = new Window
+        {
+            Owner = this,
+            Title = "OBS Credentials",
+            Content = panel,
+            Width = 420,
+            Height = 220,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            Background = (SolidColorBrush)new BrushConverter().ConvertFromString("#101315")!,
+            Foreground = Brushes.White
+        };
+
+        var connectRequested = false;
+        connectButton.Click += (_, _) =>
+        {
+            connectRequested = true;
+            window.DialogResult = true;
+        };
+        saveButton.Click += (_, _) => window.DialogResult = true;
+        cancelButton.Click += (_, _) => window.DialogResult = false;
+
+        if (window.ShowDialog() != true)
+            return false;
+
+        _settings.ObsUrl = urlBox.Text.Trim();
+        _settings.ObsPassword = passwordBox.Password;
+        UserSettingsStore.Save(_settingsPath, _settings);
+
+        var currentMatch = _host.State.CurrentMatch;
+        _host = new AutomationHost(BuildRuntimeConfig(), _logger);
+        _host.State.SetCurrentMatch(currentMatch);
+        SyncScoreDisplaysFromState();
+
+        if (connectRequested)
+        {
+            _ = Dispatcher.InvokeAsync(async () =>
+            {
+                var ok = await _host.ConnectAsync(CancellationToken.None);
+                SetObsStatus(ok ? "Connected" : "Disconnected", ok ? "#22C55E" : "#EF4444");
+            });
+        }
+
+        return true;
+    }
+
+    private bool ShowChallongeCredentialsDialog()
+    {
+        var panel = new StackPanel { Margin = new Thickness(14) };
+        panel.Children.Add(new TextBlock { Text = "Tournament Slug", Foreground = Brushes.LightGray, Margin = new Thickness(0, 0, 0, 4) });
+        var tournamentBox = new TextBox { Text = ChallongeTournamentBox.Text };
+        panel.Children.Add(tournamentBox);
+        panel.Children.Add(new TextBlock { Text = "API Key", Foreground = Brushes.LightGray, Margin = new Thickness(0, 8, 0, 4) });
+        var apiKeyBox = new PasswordBox
+        {
+            Margin = new Thickness(4),
+            Padding = new Thickness(6),
+            Background = (SolidColorBrush)new BrushConverter().ConvertFromString("#0B0F12")!,
+            Foreground = Brushes.White,
+            BorderBrush = (SolidColorBrush)new BrushConverter().ConvertFromString("#334155")!
+        };
+        apiKeyBox.Password = ChallongeApiKeyBox.Text;
+        panel.Children.Add(apiKeyBox);
+
+        var saveButton = new Button { Content = "Save", Width = 88, Margin = new Thickness(4) };
+        var cancelButton = new Button { Content = "Cancel", Width = 88, Margin = new Thickness(4) };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(saveButton);
+        buttons.Children.Add(cancelButton);
+        panel.Children.Add(buttons);
+
+        var window = new Window
+        {
+            Owner = this,
+            Title = "Challonge Credentials",
+            Content = panel,
+            Width = 420,
+            Height = 220,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            Background = (SolidColorBrush)new BrushConverter().ConvertFromString("#101315")!,
+            Foreground = Brushes.White
+        };
+
+        saveButton.Click += (_, _) => window.DialogResult = true;
+        cancelButton.Click += (_, _) => window.DialogResult = false;
+
+        if (window.ShowDialog() != true)
+            return false;
+
+        ChallongeTournamentBox.Text = tournamentBox.Text.Trim();
+        ChallongeApiKeyBox.Text = apiKeyBox.Password.Trim();
+        _settings.ChallongeTournament = ChallongeTournamentBox.Text;
+        _settings.ChallongeApiKey = ChallongeApiKeyBox.Text;
+        UserSettingsStore.Save(_settingsPath, _settings);
+
+        if (!HasChallongeCredentials())
+            SetChallongeStatus("No Credentials", "#FACC15");
+
+        return true;
     }
 
     private sealed class ChallongeQueueEntry

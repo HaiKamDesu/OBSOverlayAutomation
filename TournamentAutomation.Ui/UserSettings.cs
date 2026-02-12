@@ -8,6 +8,8 @@ public sealed class UserSettings
     public string? PlayerDatabasePath { get; set; }
     public string? ChallongeTournament { get; set; }
     public string? ChallongeApiKey { get; set; }
+    public string? ObsUrl { get; set; }
+    public string? ObsPassword { get; set; }
 }
 
 public static class UserSettingsStore
