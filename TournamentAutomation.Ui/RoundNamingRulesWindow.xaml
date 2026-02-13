@@ -1,0 +1,105 @@
+<Window x:Class="TournamentAutomation.Ui.RoundNamingRulesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Round Naming Rules" Height="690" Width="1180"
+        MinHeight="500"
+        Background="#101315" Foreground="#EAEAEA"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="260" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Text="Ordered rules (top to bottom). First matching rule is applied."
+                   Foreground="#9CA3AF"
+                   Margin="0,0,0,8" />
+
+        <Border Grid.Row="1"
+                Background="#0B0F12"
+                BorderBrush="#334155"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="8,6"
+                Margin="0,0,0,8">
+            <TextBlock Name="BracketSummaryText"
+                       Foreground="#9CA3AF"
+                       Text="Winners side: 0 rounds detected | Losers side: 0 rounds detected" />
+        </Border>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,8">
+            <Button Width="90" Margin="0,0,8,0" Content="Add" Click="Add_Click" />
+            <Button Width="90" Margin="0,0,8,0" Content="Edit" Click="Edit_Click" />
+            <Button Width="90" Margin="0,0,8,0" Content="Remove" Click="Remove_Click" />
+            <Button Width="90" Margin="0,0,8,0" Content="Move Up" Click="MoveUp_Click" />
+            <Button Width="90" Margin="0,0,8,0" Content="Move Down" Click="MoveDown_Click" />
+            <Button Width="150" Margin="10,0,8,0" Content="Refit Table Columns" Click="RefitColumns_Click" />
+            <Button Width="190" Margin="10,0,0,0" Content="Reset to Default Ruleset" Click="ResetDefaults_Click" />
+            <StackPanel Orientation="Horizontal" Margin="14,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="Preview" Margin="0,0,6,0" VerticalAlignment="Center" Foreground="#9CA3AF" />
+                <CheckBox Name="ShowPreviewResultsCheckBox"
+                          VerticalAlignment="Center"
+                          IsChecked="True"
+                          Click="ShowPreviewResultsCheckBox_Click" />
+            </StackPanel>
+        </StackPanel>
+
+        <ListView Name="RulesList"
+                  Grid.Row="3"
+                  Margin="0,0,0,12"
+                  SelectionMode="Single"
+                  MouseDoubleClick="RulesList_MouseDoubleClick"
+                  PreviewMouseWheel="ListView_PreviewMouseWheel">
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Header="#" DisplayMemberBinding="{Binding RuleNumber}" />
+                    <GridViewColumn Header="Side" DisplayMemberBinding="{Binding Side}" />
+                    <GridViewColumn Header="Selector" DisplayMemberBinding="{Binding Selector}" />
+                    <GridViewColumn Header="Reset Cond." DisplayMemberBinding="{Binding ResetCondition}" />
+                    <GridViewColumn Header="FT" DisplayMemberBinding="{Binding Ft}" />
+                    <GridViewColumn Header="App Output" DisplayMemberBinding="{Binding AppTemplate}" />
+                    <GridViewColumn Header="OBS Output" DisplayMemberBinding="{Binding ObsTemplate}" />
+                </GridView>
+            </ListView.View>
+        </ListView>
+
+        <DockPanel Name="PreviewHeaderPanel" Grid.Row="4" Margin="0,0,0,8">
+            <TextBlock DockPanel.Dock="Left"
+                       Text="Preview results from current queue"
+                       Foreground="#9CA3AF"
+                       VerticalAlignment="Center" />
+        </DockPanel>
+
+        <ListView Name="PreviewList"
+                  Grid.Row="5"
+                  Margin="0,0,0,12"
+                  PreviewMouseWheel="ListView_PreviewMouseWheel">
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Header="Match" DisplayMemberBinding="{Binding MatchLabel}" />
+                    <GridViewColumn Header="Side" DisplayMemberBinding="{Binding Side}" />
+                    <GridViewColumn Header="Actual Round" DisplayMemberBinding="{Binding ActualRound}" />
+                    <GridViewColumn Header="Original (App)" DisplayMemberBinding="{Binding OriginalApp}" />
+                    <GridViewColumn Header="With Ruleset (App)" DisplayMemberBinding="{Binding FinalApp}" />
+                    <GridViewColumn Header="Original (OBS)" DisplayMemberBinding="{Binding OriginalObs}" />
+                    <GridViewColumn Header="With Ruleset (OBS)" DisplayMemberBinding="{Binding FinalObs}" />
+                    <GridViewColumn Header="FT" DisplayMemberBinding="{Binding Ft}" />
+                    <GridViewColumn Header="Matched Rule" DisplayMemberBinding="{Binding MatchedRuleText}" />
+                </GridView>
+            </ListView.View>
+        </ListView>
+
+        <Border Grid.Row="6" Padding="0,6,0,8">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Width="90" Margin="6" Content="Cancel" Click="Cancel_Click" />
+                <Button Width="90" Margin="6" Content="Save" Click="Save_Click" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

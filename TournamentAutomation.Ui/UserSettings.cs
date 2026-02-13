@@ -30,6 +30,7 @@ public sealed class UserSettings
     public string? MapSetType { get; set; }
     public bool MoveToNextOpenMatchOnCommitToChallonge { get; set; } = true;
     public List<CountrySetting> Countries { get; set; } = new();
+    public List<RoundNamingRuleSetting> RoundNamingRules { get; set; } = new();
     public List<SceneButtonSetting> SceneButtons { get; set; } = new();
 }
 
@@ -44,6 +45,20 @@ public sealed class CountrySetting
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string FlagPath { get; set; } = string.Empty;
+}
+
+public sealed class RoundNamingRuleSetting
+{
+    public bool Enabled { get; set; } = true;
+    public string SideFilter { get; set; } = "both";
+    public string SelectorType { get; set; } = "relative_from_end";
+    public int SelectorValue { get; set; } = 1;
+    public string GrandFinalsResetCondition { get; set; } = "any";
+    public string AppTemplate { get; set; } = "{Side} side - Round {Round}";
+    public string ObsTemplate { get; set; } = "{Side} side - Round {Round}";
+    public bool IncludeMatchNumberInAppTitle { get; set; } = true;
+    public bool IncludeMatchNumberInObsTitle { get; set; } = false;
+    public int Ft { get; set; } = 2;
 }
 
 public static class UserSettingsStore

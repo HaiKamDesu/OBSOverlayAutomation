@@ -1,0 +1,111 @@
+<Window x:Class="TournamentAutomation.Ui.RoundNamingRuleEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Round Naming Rule"
+        Height="560"
+        Width="780"
+        MinHeight="480"
+        Background="#101315"
+        Foreground="#EAEAEA"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanMinimize">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <Grid Margin="0,0,6,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="240" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0"
+                           Grid.ColumnSpan="2"
+                           Text="Configure when this rule applies and how the match name should be transformed."
+                           Foreground="#9CA3AF"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,10" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,8,8,4" Foreground="#9CA3AF" FontWeight="SemiBold" Text="Rule Status" />
+                <ComboBox x:Name="EnabledModeBox" Grid.Row="1" Grid.Column="1" Margin="0,4,0,4">
+                    <ComboBoxItem Content="Enabled" />
+                    <ComboBoxItem Content="Disabled" />
+                </ComboBox>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,8,8,4" Foreground="#9CA3AF" FontWeight="SemiBold" Text="Bracket Side Filter" />
+                <ComboBox x:Name="SideFilterBox" Grid.Row="2" Grid.Column="1" Margin="0,4,0,4">
+                    <ComboBoxItem Content="both" />
+                    <ComboBoxItem Content="winners" />
+                    <ComboBoxItem Content="losers" />
+                </ComboBox>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,8,8,4" Foreground="#9CA3AF" FontWeight="SemiBold" Text="Phase Selector Type" />
+                <ComboBox x:Name="SelectorTypeBox" Grid.Row="3" Grid.Column="1" Margin="0,4,0,4">
+                    <ComboBoxItem Content="relative_from_end" />
+                    <ComboBoxItem Content="explicit_round" />
+                    <ComboBoxItem Content="fallback" />
+                </ComboBox>
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,8,8,4" Foreground="#9CA3AF" FontWeight="SemiBold" Text="Selector Value" />
+                <StackPanel Grid.Row="4" Grid.Column="1">
+                    <TextBox x:Name="SelectorValueBox" Margin="0,4,0,2" />
+                    <TextBlock Text="For relative mode: 1 means last round on that side. For explicit mode: exact round number."
+                               Foreground="#9CA3AF"
+                               TextWrapping="Wrap"
+                               Margin="0,2,0,0" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,8,8,4" Foreground="#9CA3AF" FontWeight="SemiBold" Text="Grand Finals Reset Condition" />
+                <ComboBox x:Name="ResetConditionBox" Grid.Row="5" Grid.Column="1" Margin="0,4,0,4">
+                    <ComboBoxItem Content="any" />
+                    <ComboBoxItem Content="reset_only" />
+                    <ComboBoxItem Content="non_reset_only" />
+                </ComboBox>
+
+                <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,8,8,4" Foreground="#9CA3AF" FontWeight="SemiBold" Text="Default FT" />
+                <TextBox x:Name="FtBox" Grid.Row="6" Grid.Column="1" Margin="0,4,0,4" />
+
+                <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,8,8,4" Foreground="#9CA3AF" FontWeight="SemiBold" Text="App Name Template" />
+                <TextBox x:Name="AppTemplateBox" Grid.Row="7" Grid.Column="1" Margin="0,4,0,4" />
+
+                <TextBlock Grid.Row="8" Grid.Column="0" Margin="0,8,8,4" Foreground="#9CA3AF" FontWeight="SemiBold" Text="OBS Name Template" VerticalAlignment="Top" />
+                <StackPanel Grid.Row="8" Grid.Column="1">
+                    <TextBox x:Name="ObsTemplateBox" Margin="0,4,0,6" />
+                    <TextBlock Text="Include MatchNumber in App title" Foreground="#9CA3AF" Margin="0,2,0,2" />
+                    <ComboBox x:Name="IncludeMatchNumberInAppTitleModeBox" Margin="0,0,0,4">
+                        <ComboBoxItem Content="Include" />
+                        <ComboBoxItem Content="Exclude" />
+                    </ComboBox>
+                    <TextBlock Text="Include MatchNumber in OBS title" Foreground="#9CA3AF" Margin="0,2,0,2" />
+                    <ComboBox x:Name="IncludeMatchNumberInObsTitleModeBox" Margin="0,0,0,4">
+                        <ComboBoxItem Content="Include" />
+                        <ComboBoxItem Content="Exclude" />
+                    </ComboBox>
+                    <TextBlock Text="Tokens: {MatchNumber}, {Side}, {Round}, {RoundFromEnd}, {FT}"
+                               Foreground="#9CA3AF"
+                               TextWrapping="Wrap"
+                               Margin="0,6,0,0" />
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Cancel" Width="88" Margin="4" Click="Cancel_Click" />
+            <Button Content="Save" Width="88" Margin="4" Click="Save_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

@@ -309,7 +309,6 @@ public partial class MainWindow : Window
         var setStateMenu = new MenuItem { Header = "Set State" };
         setStateMenu.Items.Add(CreateQueueActionMenuItem("Pending", async () => await SetChallongeMatchStateAsync(row.MatchId, "pending")));
         setStateMenu.Items.Add(CreateQueueActionMenuItem("Open", async () => await SetChallongeMatchStateAsync(row.MatchId, "open")));
-        setStateMenu.Items.Add(CreateQueueActionMenuItem("Underway", async () => await SetChallongeMatchStateAsync(row.MatchId, "underway")));
         setStateMenu.Items.Add(CreateQueueActionMenuItem("Complete", async () => await SetChallongeMatchStateAsync(row.MatchId, "complete")));
 
         var dqMenu = new MenuItem { Header = "DQ" };
@@ -416,6 +415,15 @@ public partial class MainWindow : Window
         RebuildHostFromSettings();
     }
 
+    private void RoundNamingRulesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ShowRoundNamingRulesDialog())
+            return;
+
+        ApplyRoundNamingRules(_challongeQueueEntries);
+        UpdateQueueListVisuals();
+    }
+
     private async void ObsCredsButton_Click(object sender, RoutedEventArgs e)
     {
         if (!ShowObsCredentialsDialog())
@@ -494,15 +502,13 @@ public partial class MainWindow : Window
             IReadOnlyList<Match> matches = await client.GetMatchesAsync(tournament);
             var participantsById = participants.ToDictionary(p => p.Id);
 
-            var orderedMatches = matches
-                .OrderBy(m => m.SuggestedPlayOrder ?? int.MaxValue)
-                .ThenBy(m => m.Round ?? int.MaxValue)
-                .ThenBy(m => m.Id)
+            var orderedMatches = BuildDisplayOrderedMatches(matches)
                 .ToList();
 
             _challongeQueueEntries.Clear();
-            foreach (var match in orderedMatches)
-                _challongeQueueEntries.Add(ToQueueEntry(match, participantsById));
+            foreach (var orderedMatch in orderedMatches)
+                _challongeQueueEntries.Add(ToQueueEntry(orderedMatch.Match, participantsById, orderedMatch.DisplayNumber));
+            ApplyRoundNamingRules(_challongeQueueEntries);
 
             foreach (var entry in _challongeQueueEntries)
                 ResolveQueueEntry(entry, allowPrompt: false);
@@ -611,7 +617,7 @@ public partial class MainWindow : Window
     private QueueRowViewModel BuildQueueRowViewModel(int index, ChallongeQueueEntry entry, MatchState match)
     {
         var unresolvedMarker = entry.ResolvedMatch is null ? " [Needs Mapping]" : string.Empty;
-        var metaText = $"{entry.RoundLabel}";
+        var metaText = $"{entry.AppRoundLabel}";
 
         var status = string.IsNullOrWhiteSpace(entry.ChallongeState)
             ? "pending"
@@ -653,14 +659,24 @@ public partial class MainWindow : Window
         };
     }
 
-    private static ChallongeQueueEntry ToQueueEntry(Match match, IReadOnlyDictionary<long, Participant> participantsById)
+    private static ChallongeQueueEntry ToQueueEntry(Match match, IReadOnlyDictionary<long, Participant> participantsById, string displayNumber)
     {
         var p1Name = ResolveName(participantsById, match.Player1Id);
         var p2Name = ResolveName(participantsById, match.Player2Id);
+        var round = match.Round ?? 0;
+        var side = round < 0 ? "Losers" : "Winners";
+        var roundAbs = Math.Abs(round);
+        if (roundAbs == 0)
+            roundAbs = 1;
 
         return new ChallongeQueueEntry
         {
             MatchId = match.Id,
+            MatchNumber = displayNumber,
+            RawRound = match.Round,
+            RoundSide = side,
+            RoundAbsolute = roundAbs,
+            SuggestedPlayOrder = match.SuggestedPlayOrder,
             ChallongePlayer1Id = match.Player1Id,
             ChallongePlayer2Id = match.Player2Id,
             ChallongeState = match.State ?? string.Empty,
@@ -669,7 +685,9 @@ public partial class MainWindow : Window
             IsReportedToChallonge = IsReportedByChallonge(match),
             RawPlayer1Name = p1Name,
             RawPlayer2Name = p2Name,
-            RoundLabel = BuildRoundLabel(match)
+            DefaultFt = 2,
+            AppRoundLabel = string.Empty,
+            ObsRoundLabel = string.Empty
         };
     }
 
@@ -710,14 +728,44 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private static string BuildRoundLabel(Match match)
+    private static List<OrderedDisplayMatch> BuildDisplayOrderedMatches(IReadOnlyList<Match> matches)
     {
-        var identifier = string.IsNullOrWhiteSpace(match.Identifier)
-            ? $"#{match.Id}"
-            : match.Identifier;
+        var ordered = matches
+            .Select(match => new
+            {
+                Match = match,
+                ExpectedNumber = TryGetExpectedDisplayNumber(match)
+            })
+            .OrderBy(entry => entry.ExpectedNumber.HasValue ? 0 : 1)
+            .ThenBy(entry => entry.ExpectedNumber ?? int.MaxValue)
+            .ThenBy(entry => entry.Match.SuggestedPlayOrder ?? int.MaxValue)
+            .ThenBy(entry => entry.Match.Round ?? int.MaxValue)
+            .ThenBy(entry => entry.Match.Id)
+            .ToList();
 
-        var roundText = match.Round is null ? "?" : match.Round.Value.ToString();
-        return $"Match {identifier} - Round {roundText}";
+        var results = new List<OrderedDisplayMatch>(ordered.Count);
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var sequentialNumber = i + 1;
+            results.Add(new OrderedDisplayMatch
+            {
+                Match = ordered[i].Match,
+                DisplayNumber = sequentialNumber.ToString()
+            });
+        }
+
+        return results;
+    }
+
+    private static int? TryGetExpectedDisplayNumber(Match match)
+    {
+        if (match.SuggestedPlayOrder is > 0)
+            return match.SuggestedPlayOrder.Value;
+
+        if (!string.IsNullOrWhiteSpace(match.Identifier) && int.TryParse(match.Identifier.Trim(), out var parsedIdentifier) && parsedIdentifier > 0)
+            return parsedIdentifier;
+
+        return null;
     }
 
     private static string ResolveName(IReadOnlyDictionary<long, Participant> participants, long? participantId)
@@ -771,8 +819,8 @@ public partial class MainWindow : Window
 
         entry.ResolvedMatch = new MatchState
         {
-            RoundLabel = entry.RoundLabel,
-            Format = MatchSetFormat.FT2,
+            RoundLabel = entry.ObsRoundLabel,
+            Format = ToMatchFormat(entry.DefaultFt),
             Player1 = player1,
             Player2 = player2
         };
@@ -908,9 +956,6 @@ public partial class MainWindow : Window
 
             switch (targetState)
             {
-                case "underway":
-                    _ = await client.MatchActionAsync(tournament, matchId, "mark_as_underway", CancellationToken.None);
-                    break;
                 case "open":
                     _ = await client.MatchActionAsync(tournament, matchId, "reopen", CancellationToken.None);
                     break;
@@ -1634,6 +1679,101 @@ public partial class MainWindow : Window
         P2Country.SelectedItem = ResolveCountryInfo(p2Code);
     }
 
+    private List<RoundNamingRuleSetting> GetConfiguredRoundNamingRules()
+    {
+        static List<RoundNamingRuleSetting> EnsureFallback(List<RoundNamingRuleSetting> rules)
+        {
+            if (rules.Any(rule => string.Equals(rule.SelectorType, "fallback", StringComparison.OrdinalIgnoreCase)))
+                return rules;
+
+            rules.Add(new RoundNamingRuleSetting
+            {
+                Enabled = true,
+                SideFilter = "both",
+                SelectorType = "fallback",
+                SelectorValue = 1,
+                GrandFinalsResetCondition = "any",
+                AppTemplate = "{Side} side - Round {Round}",
+                ObsTemplate = "{Side} side - Round {Round}",
+                IncludeMatchNumberInAppTitle = false,
+                IncludeMatchNumberInObsTitle = false,
+                Ft = 2
+            });
+            return rules;
+        }
+
+        if (_settings.RoundNamingRules is { Count: > 0 })
+        {
+            var configured = _settings.RoundNamingRules
+                .Select(CloneRule)
+                .ToList();
+            return EnsureFallback(configured);
+        }
+
+        return EnsureFallback(RoundNamingEngine.BuildDefaultRules());
+    }
+
+    private void ApplyRoundNamingRules(List<ChallongeQueueEntry> entries)
+    {
+        if (entries.Count == 0)
+            return;
+
+        var rules = GetConfiguredRoundNamingRules();
+        var sources = entries.Select(entry => new RoundNamingPreviewSource
+        {
+            MatchId = entry.MatchId,
+            MatchNumber = entry.MatchNumber,
+            Side = entry.RoundSide,
+            Round = entry.RoundAbsolute,
+            SuggestedPlayOrder = entry.SuggestedPlayOrder
+        }).ToList();
+        var results = RoundNamingEngine.ApplyRules(rules, sources, useRuleset: true);
+        foreach (var entry in entries)
+        {
+            if (!results.TryGetValue(entry.MatchId, out var result))
+                continue;
+
+            entry.DefaultFt = result.Ft;
+            entry.AppRoundLabel = result.AppLabel;
+            entry.ObsRoundLabel = result.ObsLabel;
+            entry.MatchedRuleIndex = result.MatchedRuleIndex;
+
+            if (entry.ResolvedMatch is not null)
+            {
+                entry.ResolvedMatch = entry.ResolvedMatch with
+                {
+                    RoundLabel = entry.ObsRoundLabel,
+                    Format = ToMatchFormat(result.Ft)
+                };
+            }
+        }
+    }
+
+    private static RoundNamingRuleSetting CloneRule(RoundNamingRuleSetting rule)
+        => new()
+        {
+            Enabled = rule.Enabled,
+            SideFilter = rule.SideFilter,
+            SelectorType = rule.SelectorType,
+            SelectorValue = rule.SelectorValue,
+            GrandFinalsResetCondition = rule.GrandFinalsResetCondition,
+            AppTemplate = rule.AppTemplate,
+            ObsTemplate = rule.ObsTemplate,
+            IncludeMatchNumberInAppTitle = rule.IncludeMatchNumberInAppTitle,
+            IncludeMatchNumberInObsTitle = rule.IncludeMatchNumberInObsTitle,
+            Ft = rule.Ft
+        };
+
+    private static MatchSetFormat ToMatchFormat(int ft)
+    {
+        return ft switch
+        {
+            <= 2 => MatchSetFormat.FT2,
+            3 => MatchSetFormat.FT3,
+            _ => MatchSetFormat.BO7
+        };
+    }
+
     private sealed class QueueRowViewModel : INotifyPropertyChanged
     {
         private bool _isSelected;
@@ -2173,6 +2313,37 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private bool ShowRoundNamingRulesDialog()
+    {
+        var window = new RoundNamingRulesWindow(GetConfiguredRoundNamingRules(), BuildRoundNamingPreviewSources())
+        {
+            Owner = this
+        };
+
+        if (window.ShowDialog() != true || window.ResultRules is null)
+            return false;
+
+        _settings.RoundNamingRules = window.ResultRules.ToList();
+        PersistSettings();
+        RebuildHostFromSettings();
+        ShowActionToast("Round naming rules updated.", ToastKind.Success);
+        return true;
+    }
+
+    private List<RoundNamingPreviewSource> BuildRoundNamingPreviewSources()
+    {
+        return _challongeQueueEntries
+            .Select(entry => new RoundNamingPreviewSource
+            {
+                MatchId = entry.MatchId,
+                MatchNumber = entry.MatchNumber,
+                Side = entry.RoundSide,
+                Round = entry.RoundAbsolute,
+                SuggestedPlayOrder = entry.SuggestedPlayOrder
+            })
+            .ToList();
+    }
+
     private void RebuildHostFromSettings()
     {
         var currentMatch = _host.State.CurrentMatch;
@@ -2241,6 +2412,15 @@ public partial class MainWindow : Window
     private sealed class ChallongeQueueEntry
     {
         public long MatchId { get; init; }
+        public string MatchNumber { get; init; } = string.Empty;
+        public int? RawRound { get; init; }
+        public int? SuggestedPlayOrder { get; init; }
+        public string RoundSide { get; set; } = "Winners";
+        public int RoundAbsolute { get; set; } = 1;
+        public int RoundFromEnd { get; set; } = 1;
+        public bool IsGrandFinalReset { get; set; }
+        public int MatchedRuleIndex { get; set; } = -1;
+        public int DefaultFt { get; set; } = 2;
         public long? ChallongePlayer1Id { get; init; }
         public long? ChallongePlayer2Id { get; init; }
         public string ChallongeState { get; set; } = string.Empty;
@@ -2249,7 +2429,8 @@ public partial class MainWindow : Window
         public bool IsReportedToChallonge { get; set; }
         public string RawPlayer1Name { get; init; } = string.Empty;
         public string RawPlayer2Name { get; init; } = string.Empty;
-        public string RoundLabel { get; init; } = string.Empty;
+        public string AppRoundLabel { get; set; } = string.Empty;
+        public string ObsRoundLabel { get; set; } = string.Empty;
         public string? Player1CharactersText { get; set; }
         public string? Player2CharactersText { get; set; }
         public MatchState? ResolvedMatch { get; set; }
@@ -2257,8 +2438,8 @@ public partial class MainWindow : Window
         public MatchState GetDisplayMatch()
             => ResolvedMatch ?? new MatchState
             {
-                RoundLabel = RoundLabel,
-                Format = MatchSetFormat.FT2,
+                RoundLabel = ObsRoundLabel,
+                Format = ToMatchFormat(DefaultFt),
                 Player1 = new PlayerInfo
                 {
                     Name = RawPlayer1Name,
@@ -2272,6 +2453,12 @@ public partial class MainWindow : Window
                     Country = CountryId.Unknown
                 }
             };
+    }
+
+    private sealed class OrderedDisplayMatch
+    {
+        public Match Match { get; init; } = null!;
+        public string DisplayNumber { get; init; } = string.Empty;
     }
 
     private enum ToastKind
