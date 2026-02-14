@@ -7,6 +7,7 @@
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -17,8 +18,29 @@
             <Button Width="90" Content="Remove" Click="Remove_Click" />
         </StackPanel>
 
+        <Grid Grid.Row="1" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Search:" VerticalAlignment="Center" Foreground="#9CA3AF" Margin="0,0,8,0" />
+            <TextBox Name="SearchBox"
+                     Grid.Column="1"
+                     Margin="0"
+                     Padding="6"
+                     VerticalContentAlignment="Center"
+                     TextChanged="SearchBox_TextChanged"
+                     ToolTip="Search nickname first, then aliases" />
+            <Button Grid.Column="2"
+                    Width="60"
+                    Margin="8,0,0,0"
+                    Content="Clear"
+                    Click="ClearSearch_Click" />
+        </Grid>
+
         <ListView Name="PlayersList"
-                  Grid.Row="1"
+                  Grid.Row="2"
                   Margin="0,0,0,12"
                   SelectionMode="Single"
                   MouseDoubleClick="PlayersList_MouseDoubleClick">
@@ -33,7 +55,7 @@
             </ListView.View>
         </ListView>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Width="90" Margin="6" Content="Cancel" Click="Cancel_Click" />
             <Button Width="90" Margin="6" Content="Select" Click="Select_Click" />
         </StackPanel>

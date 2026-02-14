@@ -16,6 +16,7 @@ public partial class PlayerSelectWindow : Window
     private readonly string _databasePath;
     private readonly IReadOnlyList<CountryInfo> _countries;
     private readonly bool _doubleClickSelectsPlayer;
+    private readonly ICollectionView _playersView;
     private string _activeSortProperty = "Name";
     private ListSortDirection _activeSortDirection = ListSortDirection.Ascending;
 
@@ -32,12 +33,18 @@ public partial class PlayerSelectWindow : Window
         _databasePath = databasePath;
         _countries = countries;
         _doubleClickSelectsPlayer = doubleClickSelectsPlayer;
-        PlayersList.ItemsSource = players;
+        _playersView = CollectionViewSource.GetDefaultView(players);
+        _playersView.Filter = PlayerMatchesSearch;
+        PlayersList.ItemsSource = _playersView;
         PlayersList.AddHandler(GridViewColumnHeader.ClickEvent, new RoutedEventHandler(PlayersColumnHeader_Click));
         ApplySort("Name", ListSortDirection.Ascending);
         Loaded += (_, _) => AutoSizeColumns();
         PlayersList.SizeChanged += (_, _) => AutoSizeColumns();
-        _players.CollectionChanged += (_, _) => ScheduleAutoSizeColumns();
+        _players.CollectionChanged += (_, _) =>
+        {
+            _playersView.Refresh();
+            ScheduleAutoSizeColumns();
+        };
     }
 
     private void Select_Click(object sender, RoutedEventArgs e)
@@ -285,19 +292,50 @@ public partial class PlayerSelectWindow : Window
 
     private void ApplySort(string propertyName, ListSortDirection direction)
     {
-        var view = CollectionViewSource.GetDefaultView(PlayersList.ItemsSource);
-        if (view is null)
-            return;
-
         _activeSortProperty = propertyName;
         _activeSortDirection = direction;
 
-        using (view.DeferRefresh())
+        using (_playersView.DeferRefresh())
         {
-            view.SortDescriptions.Clear();
-            view.SortDescriptions.Add(new SortDescription(propertyName, direction));
+            _playersView.SortDescriptions.Clear();
+            _playersView.SortDescriptions.Add(new SortDescription(propertyName, direction));
         }
 
         ScheduleAutoSizeColumns();
+    }
+
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _playersView.Refresh();
+        ScheduleAutoSizeColumns();
+    }
+
+    private void ClearSearch_Click(object sender, RoutedEventArgs e)
+    {
+        SearchBox.Text = string.Empty;
+        SearchBox.Focus();
+    }
+
+    private bool PlayerMatchesSearch(object item)
+    {
+        if (item is not PlayerProfile profile)
+            return false;
+
+        var query = SearchBox.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(query))
+            return true;
+
+        if (ContainsIgnoreCase(profile.Name, query))
+            return true;
+
+        return profile.Aliases.Any(alias => ContainsIgnoreCase(alias, query));
+    }
+
+    private static bool ContainsIgnoreCase(string? source, string value)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+            return false;
+
+        return source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
     }
 }

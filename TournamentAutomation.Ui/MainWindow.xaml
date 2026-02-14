@@ -368,12 +368,44 @@
 
                 <GroupBox Header="Match" Margin="0,0,6,4" Padding="4">
                     <Grid>
-                        <WrapPanel>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <WrapPanel Grid.Row="0">
                             <Button Name="RefreshButton" Content="Apply to OBS" Click="RefreshButton_Click" />
                             <Button Content="Swap Player Sides" Click="Swap_Click" />
                             <Button Content="Reset Match" Click="Reset_Click" />
                             <Button Content="Commit to Challonge" Click="CommitToChallonge_Click" />
                         </WrapPanel>
+
+                        <Grid Grid.Row="1" Margin="2,6,2,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="120" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Round Label:"
+                                       Foreground="#9CA3AF"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,8,0" />
+                            <TextBox Name="MatchRoundLabelBox"
+                                     Grid.Column="1"
+                                     Height="28"
+                                     Margin="0,0,12,0"
+                                     ToolTip="Round label text shown on overlay" />
+                            <TextBlock Grid.Column="2"
+                                       Text="Set Type:"
+                                       Foreground="#9CA3AF"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,8,0" />
+                            <TextBox Name="MatchSetTypeBox"
+                                     Grid.Column="3"
+                                     Height="28"
+                                     ToolTip="Examples: FT2, FT3, BO7" />
+                        </Grid>
                     </Grid>
                 </GroupBox>
 

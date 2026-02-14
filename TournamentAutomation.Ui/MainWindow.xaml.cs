@@ -74,6 +74,8 @@ public partial class MainWindow : Window
         UpdateQueueListVisuals();
         UpdateCharacterButtonLabels();
         SyncScoreDisplaysFromState();
+        MatchRoundLabelBox.Text = _host.State.CurrentMatch.RoundLabel ?? string.Empty;
+        MatchSetTypeBox.Text = ToSetTypeText(_host.State.CurrentMatch.Format);
         MoveNextOnCommitMenuItem.IsChecked = _settings.MoveToNextOpenMatchOnCommitToChallonge;
         _toastTimer.Tick += (_, _) => HideActionToast();
         Loaded += MainWindow_Loaded;
@@ -81,7 +83,7 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        await RefreshObsStatusAsync();
+        await EnsureObsConnectedOnStartupAsync();
         await RefreshChallongeQueueAsync(showMissingCredentialsWarning: false, showErrorDialog: false);
     }
 
@@ -103,6 +105,7 @@ public partial class MainWindow : Window
         var p2Country = P2Country.SelectedItem as CountryInfo;
         var p1 = BuildPlayer(P1Name.Text, P1Team.Text, p1Country, P1Characters.Text);
         var p2 = BuildPlayer(P2Name.Text, P2Team.Text, p2Country, P2Characters.Text);
+        ApplyMatchMetadataFromFieldsToCurrentMatch();
 
         ShowPendingStatus("Waiting for OBS to respond...");
         try
@@ -1233,6 +1236,8 @@ public partial class MainWindow : Window
 
         P1Country.SelectedItem = ResolveCountrySelection(match.Player1) ?? _countries.FirstOrDefault(IsUnknownCountry);
         P2Country.SelectedItem = ResolveCountrySelection(match.Player2) ?? _countries.FirstOrDefault(IsUnknownCountry);
+        MatchRoundLabelBox.Text = match.RoundLabel ?? string.Empty;
+        MatchSetTypeBox.Text = ToSetTypeText(match.Format);
 
         UpdateCharacterButtonLabels();
         SyncScoreDisplaysFromState();
@@ -1403,10 +1408,69 @@ public partial class MainWindow : Window
         if (_currentQueueIndex < 0 || _currentQueueIndex >= _challongeQueueEntries.Count)
             return;
 
+        ApplyMatchMetadataFromFieldsToCurrentMatch();
         var entry = _challongeQueueEntries[_currentQueueIndex];
         entry.ResolvedMatch = _host.State.CurrentMatch;
         entry.Player1CharactersText = P1Characters.Text?.Trim() ?? string.Empty;
         entry.Player2CharactersText = P2Characters.Text?.Trim() ?? string.Empty;
+    }
+
+    private void ApplyMatchMetadataFromFieldsToCurrentMatch()
+    {
+        var current = _host.State.CurrentMatch;
+        var roundLabel = MatchRoundLabelBox.Text?.Trim() ?? string.Empty;
+        var format = ParseSetTypeText(MatchSetTypeBox.Text, current.Format);
+        if (string.Equals(current.RoundLabel, roundLabel, StringComparison.Ordinal)
+            && current.Format == format)
+        {
+            return;
+        }
+
+        _host.State.SetCurrentMatch(current with
+        {
+            RoundLabel = roundLabel,
+            Format = format
+        });
+    }
+
+    private static MatchSetFormat ParseSetTypeText(string? input, MatchSetFormat fallback)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return fallback;
+
+        var normalized = new string(input
+            .Where(char.IsLetterOrDigit)
+            .ToArray())
+            .ToUpperInvariant();
+
+        if (normalized.StartsWith("FT", StringComparison.Ordinal) && int.TryParse(normalized[2..], out var ftValue))
+            return ToMatchFormat(ftValue);
+
+        if (normalized.StartsWith("BO", StringComparison.Ordinal) && int.TryParse(normalized[2..], out var boValue))
+        {
+            return boValue switch
+            {
+                <= 3 => MatchSetFormat.FT2,
+                <= 5 => MatchSetFormat.FT3,
+                _ => MatchSetFormat.BO7
+            };
+        }
+
+        if (int.TryParse(normalized, out var directValue))
+            return ToMatchFormat(directValue);
+
+        return fallback;
+    }
+
+    private static string ToSetTypeText(MatchSetFormat format)
+    {
+        return format switch
+        {
+            MatchSetFormat.FT2 => "FT2",
+            MatchSetFormat.FT3 => "FT3",
+            MatchSetFormat.BO7 => "BO7",
+            _ => "FT2"
+        };
     }
 
     private void EnsureAliasForProfile(string profileName, string challongeName)
@@ -1820,8 +1884,9 @@ public partial class MainWindow : Window
     private AppConfig BuildRuntimeConfig()
     {
         var config = ConfigScript.Build();
+        var envObsUrl = Environment.GetEnvironmentVariable("OBS_WS_URL")?.Trim();
         var obsUrl = string.IsNullOrWhiteSpace(_settings.ObsUrl)
-            ? (Environment.GetEnvironmentVariable("OBS_WS_URL") ?? string.Empty)
+            ? (string.IsNullOrWhiteSpace(envObsUrl) ? config.Obs.Url : envObsUrl)
             : _settings.ObsUrl.Trim();
         var obsPassword = _settings.ObsPassword
             ?? Environment.GetEnvironmentVariable("OBS_WS_PASSWORD")
@@ -1958,7 +2023,34 @@ public partial class MainWindow : Window
         => !string.IsNullOrWhiteSpace(ChallongeTournamentBox.Text?.Trim())
            && !string.IsNullOrWhiteSpace(ChallongeApiKeyBox.Text?.Trim());
 
-    private async Task RefreshObsStatusAsync()
+    private async Task<bool> RefreshObsStatusAsync(bool showToast = true)
+    {
+        if (!HasObsCredentials())
+        {
+            SetObsStatus("No Credentials", "#FACC15");
+            return false;
+        }
+
+        if (showToast)
+            ShowPendingStatus("Waiting for OBS to respond...");
+        try
+        {
+            var connected = await _host.ConnectAsync(CancellationToken.None);
+            SetObsStatus(connected ? "Connected" : "Disconnected", connected ? "#22C55E" : "#EF4444");
+            if (showToast)
+                ShowActionToast(connected ? "Connected to OBS." : "Could not connect to OBS.", connected ? ToastKind.Success : ToastKind.Error);
+            return connected;
+        }
+        catch (Exception ex)
+        {
+            SetObsStatus("Disconnected", "#EF4444");
+            if (showToast)
+                ShowActionToast($"OBS connection failed: {ex.Message}", ToastKind.Error);
+            return false;
+        }
+    }
+
+    private async Task EnsureObsConnectedOnStartupAsync()
     {
         if (!HasObsCredentials())
         {
@@ -1966,17 +2058,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        ShowPendingStatus("Waiting for OBS to respond...");
-        try
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            var connected = await _host.ConnectAsync(CancellationToken.None);
-            SetObsStatus(connected ? "Connected" : "Disconnected", connected ? "#22C55E" : "#EF4444");
-            ShowActionToast(connected ? "Connected to OBS." : "Could not connect to OBS.", connected ? ToastKind.Success : ToastKind.Error);
-        }
-        catch (Exception ex)
-        {
-            SetObsStatus("Disconnected", "#EF4444");
-            ShowActionToast($"OBS connection failed: {ex.Message}", ToastKind.Error);
+            var connected = await RefreshObsStatusAsync(showToast: attempt == 1);
+            if (connected)
+                return;
+
+            if (attempt < maxAttempts)
+                await Task.Delay(600);
         }
     }
 
