@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ChallongeInterface\ChallongeInterface.csproj" />
+    <ProjectReference Include="..\ChallongeProfileScraper\ChallongeProfileScraper.csproj" />
     <ProjectReference Include="..\TournamentAutomation\TournamentAutomation.csproj" />
   </ItemGroup>
 </Project>

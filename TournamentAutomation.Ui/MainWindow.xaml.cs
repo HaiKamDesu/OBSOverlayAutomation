@@ -4,6 +4,8 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using ChallongeInterface;
 using ChallongeInterface.Models;
+using ChallongeProfileScraper.Models;
+using ChallongeProfileScraper.Services;
 using Microsoft.Win32;
 using TournamentAutomation.Application;
 using TournamentAutomation.Domain;
@@ -33,6 +35,10 @@ public partial class MainWindow : Window
     private string _playerDatabasePath = string.Empty;
     private int _currentQueueIndex = -1;
     private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private readonly Dictionary<string, ChallongeProfileStats?> _challongeProfileStatsCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ChallongeProfileScraperService _challongeProfileScraper;
+    private int _challongeProfileDisplayVersion;
+    private bool _playerDatabaseDirty;
 
     public MainWindow()
     {
@@ -48,6 +54,7 @@ public partial class MainWindow : Window
         PersistSettings();
 
         _logger = new ConsoleAppLogger();
+        _challongeProfileScraper = new ChallongeProfileScraperService(new HttpClient());
         _host = new AutomationHost(BuildRuntimeConfig(), _logger);
 
         foreach (var entry in GetConfiguredCountries().OrderBy(x => x.Acronym, StringComparer.OrdinalIgnoreCase))
@@ -76,6 +83,7 @@ public partial class MainWindow : Window
         SyncScoreDisplaysFromState();
         MatchRoundLabelBox.Text = _host.State.CurrentMatch.RoundLabel ?? string.Empty;
         MatchSetTypeBox.Text = ToSetTypeText(_host.State.CurrentMatch.Format);
+        UpdateDisplayedProfileStats(null);
         MoveNextOnCommitMenuItem.IsChecked = _settings.MoveToNextOpenMatchOnCommitToChallonge;
         _toastTimer.Tick += (_, _) => HideActionToast();
         Loaded += MainWindow_Loaded;
@@ -514,7 +522,8 @@ public partial class MainWindow : Window
             ApplyRoundNamingRules(_challongeQueueEntries);
 
             foreach (var entry in _challongeQueueEntries)
-                ResolveQueueEntry(entry, allowPrompt: false);
+                ResolveQueueEntry(entry, allowPrompt: false, persistEnrichment: false);
+            SavePlayerDatabaseIfDirty();
 
             if (_challongeQueueEntries.Count == 0)
             {
@@ -577,6 +586,7 @@ public partial class MainWindow : Window
         if (_challongeQueueEntries.Count == 0)
         {
             QueuePositionLabel.Content = "Queue position: not loaded";
+            UpdateDisplayedProfileStats(null);
             return;
         }
 
@@ -600,6 +610,7 @@ public partial class MainWindow : Window
             QueueListBox.SelectedIndex = -1;
             QueuePositionLabel.Content = $"Queue position: not selected ({_challongeQueueEntries.Count} matches)";
             ScrollQueueViewportToFirstOpenMatch();
+            UpdateDisplayedProfileStats(null);
         }
     }
 
@@ -664,8 +675,10 @@ public partial class MainWindow : Window
 
     private static ChallongeQueueEntry ToQueueEntry(Match match, IReadOnlyDictionary<long, Participant> participantsById, string displayNumber)
     {
-        var p1Name = ResolveName(participantsById, match.Player1Id);
-        var p2Name = ResolveName(participantsById, match.Player2Id);
+        var p1Participant = ResolveParticipant(participantsById, match.Player1Id);
+        var p2Participant = ResolveParticipant(participantsById, match.Player2Id);
+        var p1Name = ResolveName(match.Player1Id, p1Participant);
+        var p2Name = ResolveName(match.Player2Id, p2Participant);
         var round = match.Round ?? 0;
         var side = round < 0 ? "Losers" : "Winners";
         var roundAbs = Math.Abs(round);
@@ -688,6 +701,8 @@ public partial class MainWindow : Window
             IsReportedToChallonge = IsReportedByChallonge(match),
             RawPlayer1Name = p1Name,
             RawPlayer2Name = p2Name,
+            RawPlayer1ApiChallongeUsername = ResolveParticipantChallongeUsername(p1Participant),
+            RawPlayer2ApiChallongeUsername = ResolveParticipantChallongeUsername(p2Participant),
             DefaultFt = 2,
             AppRoundLabel = string.Empty,
             ObsRoundLabel = string.Empty
@@ -771,18 +786,36 @@ public partial class MainWindow : Window
         return null;
     }
 
-    private static string ResolveName(IReadOnlyDictionary<long, Participant> participants, long? participantId)
+    private static Participant? ResolveParticipant(IReadOnlyDictionary<long, Participant> participants, long? participantId)
+    {
+        if (participantId is null)
+            return null;
+
+        participants.TryGetValue(participantId.Value, out var participant);
+        return participant;
+    }
+
+    private static string ResolveName(long? participantId, Participant? participant)
     {
         if (participantId is null)
             return "TBD";
 
-        if (!participants.TryGetValue(participantId.Value, out var participant))
+        if (participant is null)
             return participantId.Value.ToString();
 
         return participant.DisplayName
             ?? participant.Name
             ?? participant.Username
             ?? participant.Id.ToString();
+    }
+
+    private static string? ResolveParticipantChallongeUsername(Participant? participant)
+    {
+        var fromProfile = NormalizeChallongeUsername(participant?.ChallongeUsername);
+        if (!string.IsNullOrWhiteSpace(fromProfile))
+            return fromProfile;
+
+        return NormalizeChallongeUsername(participant?.Username);
     }
 
     private static bool IsSameMatch(MatchState left, MatchState right)
@@ -792,7 +825,7 @@ public partial class MainWindow : Window
             && string.Equals(left.RoundLabel, right.RoundLabel, StringComparison.OrdinalIgnoreCase);
     }
 
-    private MatchState? ResolveQueueEntry(ChallongeQueueEntry entry, bool allowPrompt)
+    private MatchState? ResolveQueueEntry(ChallongeQueueEntry entry, bool allowPrompt, bool persistEnrichment = true)
     {
         if (entry.ResolvedMatch is not null)
             return entry.ResolvedMatch;
@@ -801,10 +834,10 @@ public partial class MainWindow : Window
         var p2 = FindProfileByNameOrAlias(entry.RawPlayer2Name);
 
         if (allowPrompt && p1 is null && !IsPlaceholderName(entry.RawPlayer1Name))
-            p1 = PromptForPlayerResolution(entry.RawPlayer1Name, "P1");
+            p1 = PromptForPlayerResolution(entry.RawPlayer1Name, "P1", entry.RawPlayer1ApiChallongeUsername);
 
         if (allowPrompt && p2 is null && !IsPlaceholderName(entry.RawPlayer2Name))
-            p2 = PromptForPlayerResolution(entry.RawPlayer2Name, "P2");
+            p2 = PromptForPlayerResolution(entry.RawPlayer2Name, "P2", entry.RawPlayer2ApiChallongeUsername);
 
         if (!IsPlaceholderName(entry.RawPlayer1Name) && p1 is null)
             return null;
@@ -819,6 +852,14 @@ public partial class MainWindow : Window
             player1 = player1 with { Score = p1Score };
             player2 = player2 with { Score = p2Score };
         }
+
+        _ = EnrichProfileFromParticipant(p1, entry.RawPlayer1Name, entry.RawPlayer1ApiChallongeUsername);
+        _ = EnrichProfileFromParticipant(p2, entry.RawPlayer2Name, entry.RawPlayer2ApiChallongeUsername);
+        if (persistEnrichment)
+            SavePlayerDatabaseIfDirty();
+
+        entry.ResolvedPlayer1ChallongeUsername = ResolveParticipantProfileUsername(entry.RawPlayer1ApiChallongeUsername, p1);
+        entry.ResolvedPlayer2ChallongeUsername = ResolveParticipantProfileUsername(entry.RawPlayer2ApiChallongeUsername, p2);
 
         entry.ResolvedMatch = new MatchState
         {
@@ -1097,7 +1138,7 @@ public partial class MainWindow : Window
             profile.Aliases.Any(alias => string.Equals(NormalizeName(alias), normalized, StringComparison.Ordinal)));
     }
 
-    private PlayerProfile? PromptForPlayerResolution(string challongeName, string slotLabel)
+    private PlayerProfile? PromptForPlayerResolution(string challongeName, string slotLabel, string? apiChallongeUsername)
     {
         var prompt = MessageBox.Show(
             $"Could not match Challonge player '{challongeName}' for {slotLabel}.\n\nYes = choose existing player (or add from list)\nNo = create a new player now\nCancel = stop loading this match",
@@ -1109,21 +1150,21 @@ public partial class MainWindow : Window
             return null;
 
         if (prompt == MessageBoxResult.No)
-            return CreatePlayerFromChallongeName(challongeName);
+            return CreatePlayerFromChallongeName(challongeName, apiChallongeUsername);
 
-        var selected = SelectPlayerForName(challongeName, slotLabel);
+        var selected = SelectPlayerForName(challongeName, slotLabel, apiChallongeUsername);
         if (selected is not null)
             return selected;
 
         return null;
     }
 
-    private PlayerProfile? SelectPlayerForName(string challongeName, string slotLabel)
+    private PlayerProfile? SelectPlayerForName(string challongeName, string slotLabel, string? apiChallongeUsername)
     {
         if (_playerProfiles.Count == 0)
         {
             MessageBox.Show("No saved players found. Create one first.", "Set Player", MessageBoxButton.OK, MessageBoxImage.Information);
-            return CreatePlayerFromChallongeName(challongeName);
+            return CreatePlayerFromChallongeName(challongeName, apiChallongeUsername);
         }
 
         var dialog = new PlayerSelectWindow(_playerProfiles, _playerDatabase, _playerDatabasePath, _countries, doubleClickSelectsPlayer: true)
@@ -1135,16 +1176,17 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() != true || dialog.SelectedProfile is null)
             return null;
 
-        EnsureAliasForProfile(dialog.SelectedProfile.Name, challongeName);
-        LoadPlayerDatabase();
+        _ = EnrichProfileFromParticipant(dialog.SelectedProfile, challongeName, apiChallongeUsername);
+        SavePlayerDatabaseIfDirty();
         return FindProfileByNameOrAlias(dialog.SelectedProfile.Name);
     }
 
-    private PlayerProfile? CreatePlayerFromChallongeName(string challongeName)
+    private PlayerProfile? CreatePlayerFromChallongeName(string challongeName, string? apiChallongeUsername)
     {
         var newProfile = new PlayerProfile
         {
-            Name = challongeName.Trim()
+            Name = challongeName.Trim(),
+            ChallongeUsername = NormalizeChallongeUsername(apiChallongeUsername)
         };
 
         var dialog = new PlayerEditWindow(_countries, newProfile)
@@ -1170,9 +1212,9 @@ public partial class MainWindow : Window
         }
 
         _playerDatabase.Players.Add(created);
-        EnsureAliasForProfile(created.Name, challongeName);
-        PlayerDatabaseStore.Save(_playerDatabasePath, _playerDatabase);
-        RefreshPlayerProfiles();
+        _playerDatabaseDirty = true;
+        _ = EnrichProfileFromParticipant(created, challongeName, apiChallongeUsername);
+        SavePlayerDatabaseIfDirty();
         return created;
     }
 
@@ -1241,6 +1283,7 @@ public partial class MainWindow : Window
 
         UpdateCharacterButtonLabels();
         SyncScoreDisplaysFromState();
+        UpdateDisplayedProfileStats(entry);
     }
 
     private static string ResolveCharactersText(PlayerInfo player, string? entryCharactersText)
@@ -1292,6 +1335,7 @@ public partial class MainWindow : Window
     private void LoadPlayerDatabase()
     {
         _playerDatabase = PlayerDatabaseStore.Load(_playerDatabasePath);
+        _playerDatabaseDirty = false;
         RefreshPlayerProfiles();
     }
 
@@ -1342,6 +1386,12 @@ public partial class MainWindow : Window
         UpdateCharacterButtonLabels();
 
         countryBox.SelectedItem = ResolveCountryInfo(profile.Country);
+
+        var profileText = BuildProfileText(profile.ChallongeUsername, null);
+        if (isPlayerOne)
+            P1ChallongeProfileText.Text = profileText;
+        else
+            P2ChallongeProfileText.Text = profileText;
     }
 
     private async Task SelectAndApplyProfileAsync(bool isPlayerOne)
@@ -1383,7 +1433,9 @@ public partial class MainWindow : Window
 
         var entry = _challongeQueueEntries[_currentQueueIndex];
         var challongeName = isPlayerOne ? entry.RawPlayer1Name : entry.RawPlayer2Name;
-        EnsureAliasForProfile(selectedProfile.Name, challongeName);
+        var apiChallongeUsername = isPlayerOne ? entry.RawPlayer1ApiChallongeUsername : entry.RawPlayer2ApiChallongeUsername;
+        _ = EnrichProfileFromParticipant(selectedProfile, challongeName, apiChallongeUsername);
+        SavePlayerDatabaseIfDirty();
 
         var refreshedProfile = FindProfileByNameOrAlias(selectedProfile.Name) ?? selectedProfile;
         var match = entry.ResolvedMatch ?? entry.GetDisplayMatch();
@@ -1396,11 +1448,16 @@ public partial class MainWindow : Window
             ? match with { Player1 = updatedPlayer }
             : match with { Player2 = updatedPlayer };
         if (isPlayerOne)
+            entry.ResolvedPlayer1ChallongeUsername = ResolveParticipantProfileUsername(entry.RawPlayer1ApiChallongeUsername, refreshedProfile);
+        else
+            entry.ResolvedPlayer2ChallongeUsername = ResolveParticipantProfileUsername(entry.RawPlayer2ApiChallongeUsername, refreshedProfile);
+        if (isPlayerOne)
             entry.Player1CharactersText = refreshedProfile.Characters;
         else
             entry.Player2CharactersText = refreshedProfile.Characters;
 
         UpdateQueueListVisuals();
+        UpdateDisplayedProfileStats(entry);
     }
 
     private void PersistCurrentQueueEntryStateFromHost()
@@ -1473,23 +1530,29 @@ public partial class MainWindow : Window
         };
     }
 
-    private void EnsureAliasForProfile(string profileName, string challongeName)
+    private bool EnrichProfileFromParticipant(PlayerProfile? profile, string challongeName, string? apiChallongeUsername)
+    {
+        if (profile is null)
+            return false;
+
+        var changed = false;
+        changed |= EnsureAliasForProfile(profile, challongeName);
+        changed |= EnsureChallongeUsernameForProfile(profile, apiChallongeUsername);
+        return changed;
+    }
+
+    private bool EnsureAliasForProfile(PlayerProfile profile, string challongeName)
     {
         var alias = challongeName?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(alias) || IsPlaceholderName(alias))
-            return;
+            return false;
 
         var normalizedAlias = NormalizeName(alias);
         if (string.IsNullOrWhiteSpace(normalizedAlias))
-            return;
-
-        var profile = _playerDatabase.Players.FirstOrDefault(player =>
-            string.Equals(player.Name, profileName, StringComparison.OrdinalIgnoreCase));
-        if (profile is null)
-            return;
+            return false;
 
         if (string.Equals(NormalizeName(profile.Name), normalizedAlias, StringComparison.Ordinal))
-            return;
+            return false;
 
         if (_playerDatabase.Players.Any(player =>
                 !string.Equals(player.Name, profile.Name, StringComparison.OrdinalIgnoreCase)
@@ -1497,13 +1560,13 @@ public partial class MainWindow : Window
                     || player.Aliases.Any(existing =>
                         string.Equals(NormalizeName(existing), normalizedAlias, StringComparison.Ordinal)))))
         {
-            return;
+            return false;
         }
 
         if (profile.Aliases.Any(existing =>
                 string.Equals(NormalizeName(existing), normalizedAlias, StringComparison.Ordinal)))
         {
-            return;
+            return false;
         }
 
         profile.Aliases.Add(alias);
@@ -1512,9 +1575,56 @@ public partial class MainWindow : Window
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(existing => existing, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        _playerDatabaseDirty = true;
+        return true;
+    }
+
+    private bool EnsureChallongeUsernameForProfile(PlayerProfile profile, string? candidateUsername)
+    {
+        var normalizedCandidate = NormalizeChallongeUsername(candidateUsername);
+        if (string.IsNullOrWhiteSpace(normalizedCandidate))
+            return false;
+
+        var current = NormalizeChallongeUsername(profile.ChallongeUsername);
+        if (!string.IsNullOrWhiteSpace(current))
+            return false;
+
+        var conflict = _playerDatabase.Players.FirstOrDefault(player =>
+            !string.Equals(player.Name, profile.Name, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(NormalizeChallongeUsername(player.ChallongeUsername), normalizedCandidate, StringComparison.OrdinalIgnoreCase));
+        if (conflict is not null)
+            return false;
+
+        profile.ChallongeUsername = normalizedCandidate;
+        _playerDatabaseDirty = true;
+        return true;
+    }
+
+    private static string? ResolveParticipantProfileUsername(string? apiUsername, PlayerProfile? mappedProfile)
+    {
+        var normalizedApi = NormalizeChallongeUsername(apiUsername);
+        if (!string.IsNullOrWhiteSpace(normalizedApi))
+            return normalizedApi;
+
+        return NormalizeChallongeUsername(mappedProfile?.ChallongeUsername);
+    }
+
+    private static string NormalizeChallongeUsername(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return string.Empty;
+
+        return input.Trim().TrimStart('@').Trim('/').Replace(" ", string.Empty, StringComparison.Ordinal);
+    }
+
+    private void SavePlayerDatabaseIfDirty()
+    {
+        if (!_playerDatabaseDirty)
+            return;
 
         PlayerDatabaseStore.Save(_playerDatabasePath, _playerDatabase);
         RefreshPlayerProfiles();
+        _playerDatabaseDirty = false;
     }
 
     private void EditCharacters(bool isPlayerOne)
@@ -1636,6 +1746,81 @@ public partial class MainWindow : Window
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Count(token => !string.IsNullOrWhiteSpace(token));
         return count <= 0 ? "Characters" : $"Characters ({count})";
+    }
+
+    private void UpdateDisplayedProfileStats(ChallongeQueueEntry? entry)
+    {
+        var requestVersion = ++_challongeProfileDisplayVersion;
+        var p1Username = entry?.ResolvedPlayer1ChallongeUsername;
+        var p2Username = entry?.ResolvedPlayer2ChallongeUsername;
+
+        P1ChallongeProfileText.Text = BuildProfileText(p1Username, entry?.Player1ProfileStats);
+        P2ChallongeProfileText.Text = BuildProfileText(p2Username, entry?.Player2ProfileStats);
+
+        _ = RefreshDisplayedProfileStatsAsync(entry, p1Username, p2Username, requestVersion);
+    }
+
+    private async Task RefreshDisplayedProfileStatsAsync(ChallongeQueueEntry? entry, string? p1Username, string? p2Username, int requestVersion)
+    {
+        var normalizedP1 = NormalizeChallongeUsername(p1Username);
+        var normalizedP2 = NormalizeChallongeUsername(p2Username);
+        if (string.IsNullOrWhiteSpace(normalizedP1) && string.IsNullOrWhiteSpace(normalizedP2))
+            return;
+
+        ChallongeProfileStats? p1Stats = null;
+        ChallongeProfileStats? p2Stats = null;
+
+        if (!string.IsNullOrWhiteSpace(normalizedP1))
+            p1Stats = await GetOrScrapeProfileStatsAsync(normalizedP1);
+
+        if (!string.IsNullOrWhiteSpace(normalizedP2))
+            p2Stats = await GetOrScrapeProfileStatsAsync(normalizedP2);
+
+        if (requestVersion != _challongeProfileDisplayVersion)
+            return;
+
+        if (entry is not null)
+        {
+            entry.Player1ProfileStats = p1Stats;
+            entry.Player2ProfileStats = p2Stats;
+        }
+
+        P1ChallongeProfileText.Text = BuildProfileText(normalizedP1, p1Stats);
+        P2ChallongeProfileText.Text = BuildProfileText(normalizedP2, p2Stats);
+    }
+
+    private async Task<ChallongeProfileStats?> GetOrScrapeProfileStatsAsync(string username)
+    {
+        if (_challongeProfileStatsCache.TryGetValue(username, out var cached))
+            return cached;
+
+        ChallongeProfileStats? stats;
+        try
+        {
+            stats = await _challongeProfileScraper.ScrapeByUsernameAsync(username, CancellationToken.None);
+        }
+        catch
+        {
+            stats = null;
+        }
+
+        _challongeProfileStatsCache[username] = stats;
+        return stats;
+    }
+
+    private static string BuildProfileText(string? username, ChallongeProfileStats? stats)
+    {
+        var normalized = NormalizeChallongeUsername(username);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return "Challonge: unavailable";
+
+        if (stats is null)
+            return $"Challonge: {normalized}";
+
+        var winRate = stats.WinRatePercent.HasValue ? $"{stats.WinRatePercent.Value:0.#}%" : "-";
+        var wins = stats.TotalWins?.ToString() ?? "-";
+        var losses = stats.TotalLosses?.ToString() ?? "-";
+        return $"Challonge: {normalized} | W-L {wins}-{losses} | WR {winRate}";
     }
 
     private static CountryInfo CreateUnknownCountry()
@@ -2519,6 +2704,12 @@ public partial class MainWindow : Window
         public bool IsReportedToChallonge { get; set; }
         public string RawPlayer1Name { get; init; } = string.Empty;
         public string RawPlayer2Name { get; init; } = string.Empty;
+        public string? RawPlayer1ApiChallongeUsername { get; init; }
+        public string? RawPlayer2ApiChallongeUsername { get; init; }
+        public string? ResolvedPlayer1ChallongeUsername { get; set; }
+        public string? ResolvedPlayer2ChallongeUsername { get; set; }
+        public ChallongeProfileStats? Player1ProfileStats { get; set; }
+        public ChallongeProfileStats? Player2ProfileStats { get; set; }
         public string AppRoundLabel { get; set; } = string.Empty;
         public string ObsRoundLabel { get; set; } = string.Empty;
         public string? Player1CharactersText { get; set; }

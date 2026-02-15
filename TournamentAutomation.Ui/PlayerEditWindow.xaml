@@ -225,6 +225,32 @@
                             <TextBlock Text="Tip: add one or multiple aliases separated by commas."
                                        Margin="0,6,0,0"
                                        Foreground="{StaticResource TextBrushMuted}" />
+
+                            <Label Content="Challonge Username" Margin="0,12,0,6" />
+                            <TextBox x:Name="ChallongeUsernameBox"
+                                     TextChanged="ChallongeUsernameBox_TextChanged"
+                                     ToolTip="Optional: profile username used for Challonge scraping (without @)" />
+                            <WrapPanel Margin="0,8,0,0">
+                                <Button x:Name="ViewStatsButton"
+                                        Content="View Stats"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Click="ViewStatsButton_Click"
+                                        Margin="0,0,8,0" />
+                                <Button x:Name="UpdateStatsButton"
+                                        Content="Update Stats"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Click="UpdateStatsButton_Click"
+                                        Margin="0,0,0,0" />
+                            </WrapPanel>
+                            <TextBlock x:Name="StatsSummaryText"
+                                       Margin="0,8,0,0"
+                                       Foreground="{StaticResource TextBrushMuted}"
+                                       TextWrapping="Wrap"
+                                       Text="Stats: not loaded" />
+                            <TextBlock x:Name="StatsUpdatedText"
+                                       Margin="0,4,0,0"
+                                       Foreground="{StaticResource TextBrushMuted}"
+                                       Text="Last updated: never" />
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>

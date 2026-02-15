@@ -110,6 +110,7 @@ public partial class PlayerSelectWindow : Window
             "Team" => "Team",
             "Country" => "Country",
             "Characters" => "Characters",
+            "Challonge" => "ChallongeUsername",
             "Aliases" => "AliasesDisplay",
             _ => string.Empty
         };
@@ -128,7 +129,11 @@ public partial class PlayerSelectWindow : Window
         var dialog = new PlayerEditWindow(_countries, selected);
         dialog.Owner = this;
         if (dialog.ShowDialog() == true && dialog.Result is not null)
+        {
             UpdateProfile(selected, dialog.Result);
+            _playersView.Refresh();
+            AutoSizeColumns();
+        }
     }
 
     private void Remove_Click(object sender, RoutedEventArgs e)
@@ -179,6 +184,13 @@ public partial class PlayerSelectWindow : Window
             return;
         }
 
+        var challongeConflict = FindChallongeUsernameConflict(profile, null);
+        if (!string.IsNullOrWhiteSpace(challongeConflict))
+        {
+            MessageBox.Show(challongeConflict, "Add Player", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
         _database.Players.Add(profile);
         _players.Add(profile);
         ResortPlayers();
@@ -208,6 +220,13 @@ public partial class PlayerSelectWindow : Window
             return;
         }
 
+        var challongeConflict = FindChallongeUsernameConflict(updated, original);
+        if (!string.IsNullOrWhiteSpace(challongeConflict))
+        {
+            MessageBox.Show(challongeConflict, "Edit Player", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
         var dbEntry = _database.Players.FirstOrDefault(x =>
             string.Equals(x.Name, original.Name, StringComparison.OrdinalIgnoreCase));
         if (dbEntry is null)
@@ -220,12 +239,16 @@ public partial class PlayerSelectWindow : Window
         dbEntry.Team = updated.Team;
         dbEntry.Country = updated.Country;
         dbEntry.Characters = updated.Characters;
+        dbEntry.ChallongeUsername = updated.ChallongeUsername;
+        dbEntry.ChallongeStats = updated.ChallongeStats;
         dbEntry.Aliases = updated.Aliases;
 
         original.Name = updated.Name;
         original.Team = updated.Team;
         original.Country = updated.Country;
         original.Characters = updated.Characters;
+        original.ChallongeUsername = updated.ChallongeUsername;
+        original.ChallongeStats = updated.ChallongeStats;
         original.Aliases = updated.Aliases;
 
         ResortPlayers();
@@ -269,6 +292,21 @@ public partial class PlayerSelectWindow : Window
         return null;
     }
 
+    private string? FindChallongeUsernameConflict(PlayerProfile candidate, PlayerProfile? existingProfile)
+    {
+        var normalized = NormalizeChallongeUsername(candidate.ChallongeUsername);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return null;
+
+        var conflict = _database.Players.FirstOrDefault(player =>
+            !ReferenceEquals(player, existingProfile)
+            && string.Equals(NormalizeChallongeUsername(player.ChallongeUsername), normalized, StringComparison.OrdinalIgnoreCase));
+        if (conflict is null)
+            return null;
+
+        return $"Challonge username '{candidate.ChallongeUsername}' is already assigned to '{conflict.Name}'.";
+    }
+
     private void ScheduleAutoSizeColumns()
     {
         _ = Dispatcher.InvokeAsync(AutoSizeColumns, DispatcherPriority.Background);
@@ -286,7 +324,7 @@ public partial class PlayerSelectWindow : Window
             if (double.IsNaN(measured) || measured <= 0)
                 continue;
 
-            column.Width = measured + 12;
+            column.Width = measured;
         }
     }
 
@@ -328,6 +366,9 @@ public partial class PlayerSelectWindow : Window
         if (ContainsIgnoreCase(profile.Name, query))
             return true;
 
+        if (ContainsIgnoreCase(profile.ChallongeUsername, query))
+            return true;
+
         return profile.Aliases.Any(alias => ContainsIgnoreCase(alias, query));
     }
 
@@ -337,5 +378,13 @@ public partial class PlayerSelectWindow : Window
             return false;
 
         return source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static string NormalizeChallongeUsername(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return string.Empty;
+
+        return input.Trim().TrimStart('@').Trim('/').Replace(" ", string.Empty, StringComparison.Ordinal);
     }
 }

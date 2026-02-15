@@ -9,8 +9,28 @@ public sealed class PlayerProfile
     public string Team { get; set; } = string.Empty;
     public string Country { get; set; } = string.Empty;
     public string Characters { get; set; } = string.Empty;
+    public string ChallongeUsername { get; set; } = string.Empty;
+    public PlayerChallongeStatsSnapshot? ChallongeStats { get; set; }
     public List<string> Aliases { get; set; } = new();
     public string AliasesDisplay => string.Join(", ", Aliases);
+}
+
+public sealed class PlayerChallongeStatsSnapshot
+{
+    public string Username { get; set; } = string.Empty;
+    public string ProfilePageUrl { get; set; } = string.Empty;
+    public string ProfilePictureUrl { get; set; } = string.Empty;
+    public string BannerImageUrl { get; set; } = string.Empty;
+    public DateTimeOffset RetrievedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public decimal? WinRatePercent { get; set; }
+    public int? TotalWins { get; set; }
+    public int? TotalLosses { get; set; }
+    public int? TotalTies { get; set; }
+    public int? TotalTournamentsParticipated { get; set; }
+    public int? FirstPlaceFinishes { get; set; }
+    public int? SecondPlaceFinishes { get; set; }
+    public int? ThirdPlaceFinishes { get; set; }
+    public int? TopTenFinishes { get; set; }
 }
 
 public sealed class PlayerDatabase
@@ -36,7 +56,10 @@ public static class PlayerDatabaseStore
             var database = JsonSerializer.Deserialize<PlayerDatabase>(json, JsonOptions) ?? new PlayerDatabase();
 
             foreach (var player in database.Players)
+            {
                 player.Aliases ??= new List<string>();
+                player.ChallongeUsername ??= string.Empty;
+            }
 
             return database;
         }

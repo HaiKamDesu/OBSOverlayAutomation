@@ -50,6 +50,7 @@
                     <GridViewColumn Header="Team" DisplayMemberBinding="{Binding Team}" />
                     <GridViewColumn Header="Country" DisplayMemberBinding="{Binding Country}" />
                     <GridViewColumn Header="Characters" DisplayMemberBinding="{Binding Characters}" />
+                    <GridViewColumn Header="Challonge" DisplayMemberBinding="{Binding ChallongeUsername}" />
                     <GridViewColumn Header="Aliases" DisplayMemberBinding="{Binding AliasesDisplay}" />
                 </GridView>
             </ListView.View>
