@@ -16,7 +16,7 @@ public static class ConfigScript
                 Url = Environment.GetEnvironmentVariable("OBS_WS_URL") ?? string.Empty,
                 Password = Environment.GetEnvironmentVariable("OBS_WS_PASSWORD") ?? string.Empty,
                 AutoConnect = true,
-                ConnectTimeoutMs = 5000
+                ConnectTimeoutMs = 20000
             },
             Scenes = new SceneMapping
             {

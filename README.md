@@ -1,6 +1,6 @@
 # OBSOverlayAutomation
 
-A reusable .NET OBS interface layer for OBS Studio (OBS 28+) using **obs-websocket v5** via `obs-websocket-dotnet`.
+A reusable .NET OBS interface layer for OBS Studio (OBS 28+) using **obs-websocket v5** with a native v5 websocket adapter.
 
 ## Solution structure
 

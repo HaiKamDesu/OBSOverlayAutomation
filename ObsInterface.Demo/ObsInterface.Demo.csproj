@@ -9,6 +9,5 @@
   <ItemGroup>
     <ProjectReference Include="..\ObsInterface\ObsInterface.csproj" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.1" />
-    <PackageReference Include="obs-websocket-dotnet" Version="5.0.1" />
   </ItemGroup>
 </Project>

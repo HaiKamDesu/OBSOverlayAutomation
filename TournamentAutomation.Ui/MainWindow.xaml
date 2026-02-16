@@ -487,6 +487,8 @@
                 Background="#166534"
                 BorderBrush="#1F2937"
                 BorderThickness="1"
+                Cursor="Arrow"
+                MouseLeftButtonUp="ActionToast_MouseLeftButtonUp"
                 Visibility="Collapsed">
             <TextBlock Name="ActionToastText"
                        Foreground="#F9FAFB"

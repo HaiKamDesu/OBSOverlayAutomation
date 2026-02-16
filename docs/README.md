@@ -4,7 +4,7 @@ This folder is the single entry point for agents and contributors. It captures w
 
 ## Project scope (short)
 
-OBSOverlayAutomation provides a small, reusable .NET interface layer for OBS Studio (OBS 28+) using obs-websocket v5 via `obs-websocket-dotnet`. It includes:
+OBSOverlayAutomation provides a small, reusable .NET interface layer for OBS Studio (OBS 28+) using a native obs-websocket v5 adapter. It includes:
 
 - `ObsInterface` class library: the only component that talks to OBS.
 - `ObsInterface.Demo` console app: example usage against a live OBS instance.

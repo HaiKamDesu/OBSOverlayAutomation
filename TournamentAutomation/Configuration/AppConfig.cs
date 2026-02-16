@@ -19,7 +19,7 @@ public sealed record ObsConnectionConfig
     public string Url { get; init; } = "ws://127.0.0.1:4455";
     public string Password { get; init; } = "";
     public bool AutoConnect { get; init; } = true;
-    public int ConnectTimeoutMs { get; init; } = 5000;
+    public int ConnectTimeoutMs { get; init; } = 20000;
 }
 
 public sealed record HotkeyConfig

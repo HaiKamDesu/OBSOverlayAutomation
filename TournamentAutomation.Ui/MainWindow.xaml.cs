@@ -12,11 +12,13 @@ using TournamentAutomation.Domain;
 using TournamentAutomation.Presentation;
 using System.Windows;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using ObsInterface;
 using TournamentAutomation.Configuration;
 
 namespace TournamentAutomation.Ui;
@@ -40,6 +42,8 @@ public partial class MainWindow : Window
     private readonly ChallongeProfileScraperService _challongeProfileScraper;
     private int _challongeProfileDisplayVersion;
     private bool _playerDatabaseDirty;
+    private string? _toastErrorDetails;
+    private string _toastErrorTitle = "Error Details";
 
     public MainWindow()
     {
@@ -127,7 +131,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowActionToast($"OBS update failed: {ex.Message}", ToastKind.Error);
+            ShowErrorToast($"OBS update failed: {ex.Message}", ex);
         }
     }
 
@@ -144,7 +148,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowActionToast($"Failed to apply Player 1: {ex.Message}", ToastKind.Error);
+            ShowErrorToast($"Failed to apply Player 1: {ex.Message}", ex);
         }
     }
 
@@ -168,7 +172,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowActionToast($"Failed to apply Player 2: {ex.Message}", ToastKind.Error);
+            ShowErrorToast($"Failed to apply Player 2: {ex.Message}", ex);
         }
     }
 
@@ -560,7 +564,7 @@ public partial class MainWindow : Window
         {
             QueuePositionLabel.Content = "Queue position: failed to refresh";
             SetChallongeStatus("Disconnected", "#EF4444");
-            ShowActionToast($"Challonge refresh failed: {ex.Message}", ToastKind.Error);
+            ShowErrorToast($"Challonge refresh failed: {ex.Message}", ex);
             if (showErrorDialog)
                 MessageBox.Show(ex.Message, "Challonge Queue", MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -568,12 +572,9 @@ public partial class MainWindow : Window
 
     private async Task VerifyObsLayoutAsync()
     {
-        var connected = await _host.ConnectAsync(CancellationToken.None);
+        var connected = await RefreshObsStatusAsync(showToast: true);
         if (!connected)
-        {
-            ShowActionToast("Could not connect to OBS to verify layout.", ToastKind.Error);
             return;
-        }
 
         var obs = _host.GetContext().Obs;
         var sceneNames = await obs.GetSceneNamesAsync(CancellationToken.None);
@@ -1022,7 +1023,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowActionToast($"Commit failed: {ex.Message}", ToastKind.Error);
+            ShowErrorToast($"Commit failed: {ex.Message}", ex);
         }
     }
 
@@ -1125,7 +1126,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowActionToast($"Set state failed: {ex.Message}", ToastKind.Error);
+            ShowErrorToast($"Set state failed: {ex.Message}", ex);
             MessageBox.Show(ex.Message, "Set Challonge State", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -1197,7 +1198,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowActionToast($"DQ submission failed: {ex.Message}", ToastKind.Error);
+            ShowErrorToast($"DQ submission failed: {ex.Message}", ex);
             MessageBox.Show(ex.Message, "DQ", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -1614,7 +1615,7 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                ShowActionToast($"Failed to apply player: {ex.Message}", ToastKind.Error);
+                ShowErrorToast($"Failed to apply player: {ex.Message}", ex);
             }
             ApplyProfileToCurrentQueueSelection(selected, isPlayerOne);
         }
@@ -2612,7 +2613,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowActionToast($"Scene switch failed: {ex.Message}", ToastKind.Error);
+            ShowErrorToast($"Scene switch failed: {ex.Message}", ex);
         }
     }
 
@@ -2636,18 +2637,119 @@ public partial class MainWindow : Window
         try
         {
             var connected = await _host.ConnectAsync(CancellationToken.None);
-            SetObsStatus(connected ? "Connected" : "Disconnected", connected ? "#22C55E" : "#EF4444");
+            if (connected)
+            {
+                SetObsStatus("Connected", "#22C55E");
+                if (showToast)
+                    ShowActionToast("Connected to OBS.", ToastKind.Success);
+                return true;
+            }
+
+            SetObsStatus("Disconnected", "#EF4444");
             if (showToast)
-                ShowActionToast(connected ? "Connected to OBS." : "Could not connect to OBS.", connected ? ToastKind.Success : ToastKind.Error);
-            return connected;
+            {
+                var diagnostics = await RunObsConnectionDiagnosticsAsync(CancellationToken.None);
+                ShowActionToast(diagnostics.ToastMessage, ToastKind.Error, errorDetails: diagnostics.Details, errorTitle: "OBS Connection Diagnostics");
+            }
+
+            return false;
         }
         catch (Exception ex)
         {
             SetObsStatus("Disconnected", "#EF4444");
             if (showToast)
-                ShowActionToast($"OBS connection failed: {ex.Message}", ToastKind.Error);
+                ShowErrorToast($"OBS connection failed: {ex.Message}", ex);
             return false;
         }
+    }
+
+    private sealed record ObsConnectionDiagnostics(string ToastMessage, string Details);
+
+    private async Task<ObsConnectionDiagnostics> RunObsConnectionDiagnosticsAsync(CancellationToken cancellationToken)
+    {
+        var details = new StringBuilder();
+        var url = _host.Config.Obs.Url?.Trim() ?? string.Empty;
+        var password = _host.Config.Obs.Password ?? string.Empty;
+        details.AppendLine($"Timestamp (UTC): {DateTime.UtcNow:O}");
+        details.AppendLine($"Configured URL: {url}");
+        details.AppendLine($"Password configured: {(string.IsNullOrEmpty(password) ? "No" : "Yes")}");
+        details.AppendLine();
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return new ObsConnectionDiagnostics("OBS URL is invalid. Click for diagnostics.", details.Append("URL parse failed. Ensure it looks like ws://127.0.0.1:4455").ToString());
+
+        if (!string.Equals(uri.Scheme, "ws", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ObsConnectionDiagnostics("OBS URL must use ws:// or wss://. Click for diagnostics.",
+                details.Append($"Unsupported URL scheme '{uri.Scheme}'.").ToString());
+        }
+
+        var port = uri.IsDefaultPort
+            ? (string.Equals(uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase) ? 443 : 80)
+            : uri.Port;
+        details.AppendLine($"Parsed endpoint: {uri.Host}:{port} ({uri.Scheme})");
+
+        var tcpReachable = false;
+        try
+        {
+            using var tcpClient = new TcpClient();
+            using var tcpCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            tcpCts.CancelAfter(TimeSpan.FromSeconds(3));
+            await tcpClient.ConnectAsync(uri.Host, port, tcpCts.Token);
+            tcpReachable = true;
+            details.AppendLine("TCP reachability: Success");
+        }
+        catch (Exception ex)
+        {
+            details.AppendLine("TCP reachability: Failed");
+            details.AppendLine(ex.ToString());
+        }
+
+        var adapter = new ObsWebsocketAdapter();
+        var controller = new ObsController(adapter);
+        details.AppendLine("Expected OBS websocket settings:");
+        details.AppendLine("- WebSocket server enabled");
+        details.AppendLine("- Port 4455");
+        details.AppendLine("- SSL disabled when using ws:// URLs");
+        details.AppendLine();
+
+        var connectResult = await controller.ConnectAndWaitAsync(url, password, TimeSpan.FromSeconds(20), cancellationToken);
+        if (connectResult.Ok)
+        {
+            _ = await controller.DisconnectAsync(cancellationToken);
+            details.AppendLine("OBS websocket handshake: Success");
+            return new ObsConnectionDiagnostics("Could not connect from app flow, but endpoint responded. Click for diagnostics.", details.ToString());
+        }
+
+        details.AppendLine($"OBS websocket handshake: Failed ({connectResult.Code})");
+        details.AppendLine(connectResult.Message);
+        if (connectResult.Exception is not null)
+        {
+            details.AppendLine();
+            details.AppendLine(connectResult.Exception.ToString());
+        }
+
+        var hint = BuildObsFailureHint(connectResult, tcpReachable, password);
+        return new ObsConnectionDiagnostics(hint, details.ToString());
+    }
+
+    private static string BuildObsFailureHint(Result<bool> connectResult, bool tcpReachable, string password)
+    {
+        if (!tcpReachable)
+            return "Could not reach OBS websocket host/port. Click for diagnostics.";
+
+        var combined = $"{connectResult.Code} {connectResult.Message} {connectResult.Exception?.Message}".ToLowerInvariant();
+        if (combined.Contains("auth", StringComparison.Ordinal) || combined.Contains("password", StringComparison.Ordinal))
+            return "OBS rejected authentication credentials. Click for diagnostics.";
+
+        if (combined.Contains("timeout", StringComparison.Ordinal))
+            return "OBS websocket connection timed out. Click for diagnostics.";
+
+        if (string.IsNullOrWhiteSpace(password))
+            return "OBS connection failed. If websocket authentication is enabled in OBS, set the password. Click for diagnostics.";
+
+        return "Could not connect to OBS. Click for diagnostics.";
     }
 
     private async Task EnsureObsConnectedOnStartupAsync()
@@ -3359,7 +3461,12 @@ public partial class MainWindow : Window
         ShowActionToast(message, ToastKind.Info, autoHide: false);
     }
 
-    private void ShowActionToast(string message, ToastKind kind, bool autoHide = true)
+    private void ShowErrorToast(string message, Exception exception, bool autoHide = true)
+    {
+        ShowActionToast(message, ToastKind.Error, autoHide, exception.ToString(), "Internal Error Details");
+    }
+
+    private void ShowActionToast(string message, ToastKind kind, bool autoHide = true, string? errorDetails = null, string? errorTitle = null)
     {
         ActionToastText.Text = message;
         ActionToast.Background = kind switch
@@ -3370,11 +3477,69 @@ public partial class MainWindow : Window
             ToastKind.Info => (SolidColorBrush)new BrushConverter().ConvertFromString("#1D4ED8")!,
             _ => (SolidColorBrush)new BrushConverter().ConvertFromString("#1F2937")!
         };
+        _toastErrorDetails = string.IsNullOrWhiteSpace(errorDetails) ? null : errorDetails;
+        _toastErrorTitle = string.IsNullOrWhiteSpace(errorTitle) ? "Error Details" : errorTitle!;
+        ActionToast.Cursor = _toastErrorDetails is null ? Cursors.Arrow : Cursors.Hand;
+        ActionToast.ToolTip = _toastErrorDetails is null ? null : "Click for details";
 
         ActionToast.Visibility = Visibility.Visible;
         _toastTimer.Stop();
         if (autoHide)
             _toastTimer.Start();
+    }
+
+    private void ActionToast_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_toastErrorDetails))
+            return;
+
+        ShowErrorDetailsDialog(_toastErrorTitle, _toastErrorDetails);
+    }
+
+    private void ShowErrorDetailsDialog(string title, string details)
+    {
+        var dialog = new Window
+        {
+            Title = title,
+            Owner = this,
+            Width = 920,
+            Height = 560,
+            MinWidth = 680,
+            MinHeight = 420,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = (SolidColorBrush)new BrushConverter().ConvertFromString("#111827")!,
+            Foreground = (SolidColorBrush)new BrushConverter().ConvertFromString("#F9FAFB")!
+        };
+
+        var root = new DockPanel { Margin = new Thickness(12) };
+
+        var closeButton = new Button
+        {
+            Content = "Close",
+            MinWidth = 90,
+            Margin = new Thickness(0, 10, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        closeButton.Click += (_, _) => dialog.Close();
+        DockPanel.SetDock(closeButton, Dock.Bottom);
+        root.Children.Add(closeButton);
+
+        var detailsBox = new TextBox
+        {
+            Text = details,
+            IsReadOnly = true,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.NoWrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Background = (SolidColorBrush)new BrushConverter().ConvertFromString("#030712")!,
+            Foreground = (SolidColorBrush)new BrushConverter().ConvertFromString("#F9FAFB")!,
+            FontFamily = new FontFamily("Consolas")
+        };
+        root.Children.Add(detailsBox);
+
+        dialog.Content = root;
+        _ = dialog.ShowDialog();
     }
 
     private void HideActionToast()
