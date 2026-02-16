@@ -10,5 +10,8 @@ public interface IObsGateway
     Task<string?> GetImageFileAsync(string inputName, CancellationToken cancellationToken);
     Task<bool> SetTextAsync(string inputName, string text, CancellationToken cancellationToken);
     Task<bool> SetImageFileAsync(string inputName, string filePath, CancellationToken cancellationToken);
+    Task<bool> SetMediaSourceAsync(string inputName, string source, CancellationToken cancellationToken);
     Task<bool> SetVisibilityAsync(string sceneName, string sceneItemName, bool visible, CancellationToken cancellationToken);
+    Task<bool> GetInputExistsAsync(string inputName, CancellationToken cancellationToken);
+    Task<IReadOnlyList<string>> GetSceneNamesAsync(CancellationToken cancellationToken);
 }

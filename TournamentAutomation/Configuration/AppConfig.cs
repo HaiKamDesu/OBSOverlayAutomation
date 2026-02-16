@@ -43,15 +43,27 @@ public sealed record OverlayMapping
     public string P1Country { get; init; } = "P1 Country Name";
     public string P1Flag { get; init; } = "P1 Flag";
     public string P1Score { get; init; } = "P1 Score";
+    public string P1ChallongeProfileImage { get; init; } = "";
+    public string P1ChallongeBannerImage { get; init; } = "";
+    public string P1ChallongeStatsText { get; init; } = "";
+    public string P1CharacterSprite { get; init; } = "";
 
     public string P2Name { get; init; } = "P2 Player Name";
     public string P2Team { get; init; } = "P2 Team Name";
     public string P2Country { get; init; } = "P2 Country Name";
     public string P2Flag { get; init; } = "P2 Flag";
     public string P2Score { get; init; } = "P2 Score";
+    public string P2ChallongeProfileImage { get; init; } = "";
+    public string P2ChallongeBannerImage { get; init; } = "";
+    public string P2ChallongeStatsText { get; init; } = "";
+    public string P2CharacterSprite { get; init; } = "";
 
     public string RoundLabel { get; init; } = "Round Label";
     public string SetType { get; init; } = "Best Of";
+    public string ChallongeDefaultProfileImagePath { get; init; } = "";
+    public string ChallongeDefaultBannerImagePath { get; init; } = "";
+    public string ChallongeDefaultStatsText { get; init; } = "";
+    public string ChallongeStatsTemplate { get; init; } = "W-L {wins}-{losses} | WR {win_rate}%";
 }
 
 public sealed record MatchDefaults

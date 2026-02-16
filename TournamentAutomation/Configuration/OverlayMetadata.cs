@@ -6,6 +6,7 @@ public sealed class OverlayMetadata
 {
     public Dictionary<CountryId, CountryInfo> Countries { get; init; } = new();
     public Dictionary<FGCharacterId, FGCharacterInfo> Characters { get; init; } = new();
+    public Dictionary<string, string> CharacterSpritesByName { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 
     public CountryInfo GetCountry(CountryId id)
         => Countries.TryGetValue(id, out var info)
@@ -39,5 +40,16 @@ public sealed class OverlayMetadata
         }
 
         return CountryId.Unknown;
+    }
+
+    public string ResolveCharacterSpritePath(string? characterName)
+    {
+        var normalized = characterName?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized))
+            return string.Empty;
+
+        return CharacterSpritesByName.TryGetValue(normalized, out var spritePath)
+            ? spritePath
+            : string.Empty;
     }
 }

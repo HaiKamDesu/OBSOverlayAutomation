@@ -23,6 +23,7 @@ namespace TournamentAutomation.Ui;
 
 public partial class MainWindow : Window
 {
+    private const string DefaultCharacterSplashartFolder = @"D:\User\Videos\Edited videos\BBCF Clips\1- USABLE ASSETS\Splashart";
     private readonly ConsoleAppLogger _logger;
     private AutomationHost _host;
     private readonly ObservableCollection<CountryInfo> _countries = new();
@@ -67,6 +68,7 @@ public partial class MainWindow : Window
         P2Country.SelectedItem = _countries.FirstOrDefault(IsUnknownCountry) ?? _countries.FirstOrDefault();
 
         LoadPlayerDatabase();
+        LoadChallongeStatsCacheFromPlayerDatabase();
 
         QueueListBox.ItemsSource = _queueRows;
         ChallongeTournamentBox.Text = _settings.ChallongeTournament
@@ -426,6 +428,14 @@ public partial class MainWindow : Window
         RebuildHostFromSettings();
     }
 
+    private void ManageCharacterCatalogButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ShowCharacterCatalogDialog())
+            return;
+
+        RebuildHostFromSettings();
+    }
+
     private void RoundNamingRulesButton_Click(object sender, RoutedEventArgs e)
     {
         if (!ShowRoundNamingRulesDialog())
@@ -458,7 +468,7 @@ public partial class MainWindow : Window
 
     private void OpenPlayerDatabaseButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new PlayerSelectWindow(_playerProfiles, _playerDatabase, _playerDatabasePath, _countries)
+        var dialog = new PlayerSelectWindow(_playerProfiles, _playerDatabase, _playerDatabasePath, _countries, GetConfiguredCharacterCatalog())
         {
             Owner = this,
             Title = "Manage Player Database"
@@ -556,6 +566,72 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task VerifyObsLayoutAsync()
+    {
+        var connected = await _host.ConnectAsync(CancellationToken.None);
+        if (!connected)
+        {
+            ShowActionToast("Could not connect to OBS to verify layout.", ToastKind.Error);
+            return;
+        }
+
+        var obs = _host.GetContext().Obs;
+        var sceneNames = await obs.GetSceneNamesAsync(CancellationToken.None);
+        var expectedScenes = GetConfiguredSceneButtons()
+            .Select(scene => scene.SceneName?.Trim() ?? string.Empty)
+            .Where(scene => !string.IsNullOrWhiteSpace(scene))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        var missingScenes = expectedScenes
+            .Where(scene => !sceneNames.Contains(scene, StringComparer.Ordinal))
+            .ToList();
+
+        var overlay = _host.Config.Overlay;
+        var inputMappings = new[]
+        {
+            overlay.P1Name, overlay.P1Team, overlay.P1Country, overlay.P1Flag, overlay.P1Score,
+            overlay.P1ChallongeProfileImage, overlay.P1ChallongeBannerImage, overlay.P1ChallongeStatsText, overlay.P1CharacterSprite,
+            overlay.P2Name, overlay.P2Team, overlay.P2Country, overlay.P2Flag, overlay.P2Score,
+            overlay.P2ChallongeProfileImage, overlay.P2ChallongeBannerImage, overlay.P2ChallongeStatsText, overlay.P2CharacterSprite,
+            overlay.RoundLabel, overlay.SetType
+        }
+        .Where(name => !string.IsNullOrWhiteSpace(name))
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+
+        var missingInputs = new List<string>();
+        foreach (var input in inputMappings)
+        {
+            if (!await obs.GetInputExistsAsync(input, CancellationToken.None))
+                missingInputs.Add(input);
+        }
+
+        if (missingScenes.Count == 0 && missingInputs.Count == 0)
+        {
+            ShowActionToast("OBS layout verified. All configured scenes and sources exist.", ToastKind.Success);
+            return;
+        }
+
+        var lines = new List<string>();
+        if (missingScenes.Count > 0)
+        {
+            lines.Add("Missing scenes:");
+            lines.AddRange(missingScenes.Select(scene => $"- {scene}"));
+        }
+
+        if (missingInputs.Count > 0)
+        {
+            if (lines.Count > 0)
+                lines.Add(string.Empty);
+            lines.Add("Missing inputs/sources:");
+            lines.AddRange(missingInputs.Select(input => $"- {input}"));
+        }
+
+        ShowActionToast("OBS layout verification found missing items.", ToastKind.Warning);
+        MessageBox.Show(string.Join(Environment.NewLine, lines), "Verify OBS Layout", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
     private async Task NavigateQueueAsync(int targetIndex)
     {
         PersistCurrentQueueEntryStateFromHost();
@@ -570,6 +646,9 @@ public partial class MainWindow : Window
         var match = ResolveQueueEntry(entry, allowPrompt: true);
         if (match is null)
             return;
+
+        match = RehydrateMatchFromPlayerDatabase(entry, match);
+        entry.ResolvedMatch = match;
 
         await _host.SetCurrentMatchAsync(match, CancellationToken.None);
 
@@ -860,6 +939,14 @@ public partial class MainWindow : Window
 
         entry.ResolvedPlayer1ChallongeUsername = ResolveParticipantProfileUsername(entry.RawPlayer1ApiChallongeUsername, p1);
         entry.ResolvedPlayer2ChallongeUsername = ResolveParticipantProfileUsername(entry.RawPlayer2ApiChallongeUsername, p2);
+        var cachedP1 = TryGetCachedProfileStats(entry.ResolvedPlayer1ChallongeUsername) ?? ToChallongeProfileStats(p1?.ChallongeStats);
+        var cachedP2 = TryGetCachedProfileStats(entry.ResolvedPlayer2ChallongeUsername) ?? ToChallongeProfileStats(p2?.ChallongeStats);
+        entry.Player1ProfileStats = cachedP1;
+        entry.Player2ProfileStats = cachedP2;
+        if (cachedP1 is not null)
+            player1 = player1 with { ChallongeProfile = ToChallongeProfileInfo(cachedP1) };
+        if (cachedP2 is not null)
+            player2 = player2 with { ChallongeProfile = ToChallongeProfileInfo(cachedP2) };
 
         entry.ResolvedMatch = new MatchState
         {
@@ -1138,6 +1225,19 @@ public partial class MainWindow : Window
             profile.Aliases.Any(alias => string.Equals(NormalizeName(alias), normalized, StringComparison.Ordinal)));
     }
 
+    private PlayerProfile? FindProfileByChallongeUsername(string? challongeUsername)
+    {
+        var normalized = NormalizeChallongeUsername(challongeUsername);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return null;
+
+        return _playerDatabase.Players.FirstOrDefault(profile =>
+            string.Equals(
+                NormalizeChallongeUsername(profile.ChallongeUsername),
+                normalized,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
     private PlayerProfile? PromptForPlayerResolution(string challongeName, string slotLabel, string? apiChallongeUsername)
     {
         var prompt = MessageBox.Show(
@@ -1167,7 +1267,7 @@ public partial class MainWindow : Window
             return CreatePlayerFromChallongeName(challongeName, apiChallongeUsername);
         }
 
-        var dialog = new PlayerSelectWindow(_playerProfiles, _playerDatabase, _playerDatabasePath, _countries, doubleClickSelectsPlayer: true)
+        var dialog = new PlayerSelectWindow(_playerProfiles, _playerDatabase, _playerDatabasePath, _countries, GetConfiguredCharacterCatalog(), doubleClickSelectsPlayer: true)
         {
             Owner = this,
             Title = $"Select {slotLabel} for '{challongeName}'"
@@ -1189,7 +1289,7 @@ public partial class MainWindow : Window
             ChallongeUsername = NormalizeChallongeUsername(apiChallongeUsername)
         };
 
-        var dialog = new PlayerEditWindow(_countries, newProfile)
+        var dialog = new PlayerEditWindow(_countries, GetConfiguredCharacterCatalog(), newProfile)
         {
             Owner = this,
             Title = $"Create Player for '{challongeName}'"
@@ -1243,7 +1343,73 @@ public partial class MainWindow : Window
             CustomCountryCode = countryInfo.Acronym,
             CustomCountryName = countryInfo.DisplayName,
             CustomFlagPath = countryInfo.FlagPath,
-            Characters = ParseCharacters(profile.Characters)
+            Characters = ParseCharacters(profile.Characters),
+            Character = profile.Characters ?? string.Empty,
+            ChallongeUsername = NormalizeChallongeUsername(profile.ChallongeUsername),
+            ChallongeProfile = ToChallongeProfileInfo(profile.ChallongeStats)
+        };
+    }
+
+    private MatchState RehydrateMatchFromPlayerDatabase(ChallongeQueueEntry entry, MatchState match)
+    {
+        var p1 = RehydratePlayerFromDatabase(match.Player1, entry.RawPlayer1Name, entry.ResolvedPlayer1ChallongeUsername);
+        var p2 = RehydratePlayerFromDatabase(match.Player2, entry.RawPlayer2Name, entry.ResolvedPlayer2ChallongeUsername);
+        return match with
+        {
+            Player1 = p1,
+            Player2 = p2
+        };
+    }
+
+    private PlayerInfo RehydratePlayerFromDatabase(PlayerInfo player, string rawName, string? preferredChallongeUsername)
+    {
+        var profile = FindProfileByNameOrAlias(player.Name)
+            ?? FindProfileByNameOrAlias(rawName)
+            ?? FindProfileByChallongeUsername(preferredChallongeUsername)
+            ?? FindProfileByChallongeUsername(player.ChallongeUsername);
+
+        if (profile is null)
+            return player;
+
+        var normalizedPreferred = NormalizeChallongeUsername(preferredChallongeUsername);
+        var normalizedProfileUsername = NormalizeChallongeUsername(profile.ChallongeUsername);
+        var targetUsername = !string.IsNullOrWhiteSpace(normalizedPreferred)
+            ? normalizedPreferred
+            : !string.IsNullOrWhiteSpace(normalizedProfileUsername)
+                ? normalizedProfileUsername
+                : player.ChallongeUsername;
+
+        var targetProfile = ToChallongeProfileInfo(profile.ChallongeStats) ?? player.ChallongeProfile;
+        return player with
+        {
+            Character = profile.Characters ?? string.Empty,
+            Characters = ParseCharacters(profile.Characters ?? string.Empty),
+            ChallongeUsername = targetUsername,
+            ChallongeProfile = targetProfile
+        };
+    }
+
+    private static ChallongeProfileInfo? ToChallongeProfileInfo(PlayerChallongeStatsSnapshot? stats)
+    {
+        if (stats is null)
+            return null;
+
+        return new ChallongeProfileInfo
+        {
+            Username = NormalizeChallongeUsername(stats.Username),
+            ProfilePageUrl = stats.ProfilePageUrl ?? string.Empty,
+            ProfilePictureUrl = stats.ProfilePictureUrl ?? string.Empty,
+            BannerImageUrl = stats.BannerImageUrl ?? string.Empty,
+            RetrievedAtUtc = stats.RetrievedAtUtc,
+            WinRatePercent = stats.WinRatePercent,
+            TotalWins = stats.TotalWins,
+            TotalLosses = stats.TotalLosses,
+            TotalTies = stats.TotalTies,
+            TotalTournamentsParticipated = stats.TotalTournamentsParticipated,
+            FirstPlaceFinishes = stats.FirstPlaceFinishes,
+            SecondPlaceFinishes = stats.SecondPlaceFinishes,
+            ThirdPlaceFinishes = stats.ThirdPlaceFinishes,
+            TopTenFinishes = stats.TopTenFinishes
         };
     }
 
@@ -1312,7 +1478,8 @@ public partial class MainWindow : Window
             CustomCountryCode = code,
             CustomCountryName = country?.DisplayName?.Trim() ?? string.Empty,
             CustomFlagPath = country?.FlagPath?.Trim() ?? string.Empty,
-            Characters = ids
+            Characters = ids,
+            Character = characters ?? string.Empty
         };
     }
 
@@ -1337,6 +1504,33 @@ public partial class MainWindow : Window
         _playerDatabase = PlayerDatabaseStore.Load(_playerDatabasePath);
         _playerDatabaseDirty = false;
         RefreshPlayerProfiles();
+    }
+
+    private void LoadChallongeStatsCacheFromPlayerDatabase()
+    {
+        _challongeProfileStatsCache.Clear();
+        foreach (var profile in _playerDatabase.Players)
+        {
+            var snapshot = profile.ChallongeStats;
+            if (snapshot is null)
+                continue;
+
+            var stats = ToChallongeProfileStats(snapshot);
+            if (stats is null)
+                continue;
+
+            var keys = new[]
+            {
+                NormalizeChallongeUsername(snapshot.Username),
+                NormalizeChallongeUsername(profile.ChallongeUsername)
+            };
+
+            foreach (var key in keys)
+            {
+                if (!string.IsNullOrWhiteSpace(key))
+                    _challongeProfileStatsCache[key] = stats;
+            }
+        }
     }
 
     private void SavePlayerProfile(PlayerInfo player, string charactersText, string? countryCode)
@@ -1402,7 +1596,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var dialog = new PlayerSelectWindow(_playerProfiles, _playerDatabase, _playerDatabasePath, _countries);
+        var dialog = new PlayerSelectWindow(_playerProfiles, _playerDatabase, _playerDatabasePath, _countries, GetConfiguredCharacterCatalog());
         dialog.Owner = this;
         if (dialog.ShowDialog() == true && dialog.SelectedProfile is not null)
         {
@@ -1630,6 +1824,7 @@ public partial class MainWindow : Window
     private void EditCharacters(bool isPlayerOne)
     {
         var charactersBox = isPlayerOne ? P1Characters : P2Characters;
+        var catalog = GetConfiguredCharacterCatalog();
         var existing = charactersBox.Text
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -1649,7 +1844,15 @@ public partial class MainWindow : Window
         var pickerRow = new Grid { Margin = new Thickness(0, 0, 0, 6) };
         pickerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         pickerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var picker = new TextBox { MinWidth = 180, ToolTip = "Enter any character name" };
+        var picker = new ComboBox
+        {
+            MinWidth = 180,
+            IsEditable = true,
+            IsTextSearchEnabled = true,
+            ToolTip = "Choose from catalog or type a custom character name"
+        };
+        foreach (var entry in catalog)
+            picker.Items.Add(entry.Name);
         var addButton = new Button { Content = "Add", Padding = new Thickness(10, 4, 10, 4) };
         Grid.SetColumn(addButton, 1);
         pickerRow.Children.Add(picker);
@@ -1696,7 +1899,7 @@ public partial class MainWindow : Window
                     string.Equals(existingCharacter, choice, StringComparison.OrdinalIgnoreCase)))
                 selectedCharacters.Add(choice);
 
-            picker.Clear();
+            picker.Text = string.Empty;
         };
         removeButton.Click += (_, _) =>
         {
@@ -1783,6 +1986,28 @@ public partial class MainWindow : Window
         {
             entry.Player1ProfileStats = p1Stats;
             entry.Player2ProfileStats = p2Stats;
+            var match = entry.ResolvedMatch ?? entry.GetDisplayMatch();
+            var updatedP1 = match.Player1 with
+            {
+                ChallongeProfile = p1Stats is null ? match.Player1.ChallongeProfile : ToChallongeProfileInfo(p1Stats),
+                ChallongeUsername = !string.IsNullOrWhiteSpace(normalizedP1) ? normalizedP1 : match.Player1.ChallongeUsername
+            };
+            var updatedP2 = match.Player2 with
+            {
+                ChallongeProfile = p2Stats is null ? match.Player2.ChallongeProfile : ToChallongeProfileInfo(p2Stats),
+                ChallongeUsername = !string.IsNullOrWhiteSpace(normalizedP2) ? normalizedP2 : match.Player2.ChallongeUsername
+            };
+            entry.ResolvedMatch = match with
+            {
+                Player1 = updatedP1,
+                Player2 = updatedP2
+            };
+
+            if (_currentQueueIndex >= 0 && _currentQueueIndex < _challongeQueueEntries.Count
+                && ReferenceEquals(_challongeQueueEntries[_currentQueueIndex], entry))
+            {
+                await _host.SetCurrentMatchAsync(entry.ResolvedMatch, CancellationToken.None);
+            }
         }
 
         P1ChallongeProfileText.Text = BuildProfileText(normalizedP1, p1Stats);
@@ -1805,7 +2030,41 @@ public partial class MainWindow : Window
         }
 
         _challongeProfileStatsCache[username] = stats;
+        if (stats is not null)
+            PersistScrapedProfileStats(username, stats);
         return stats;
+    }
+
+    private void PersistScrapedProfileStats(string username, ChallongeProfileStats stats)
+    {
+        var normalized = NormalizeChallongeUsername(username);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return;
+
+        var changed = false;
+        var normalizedStatsUser = NormalizeChallongeUsername(stats.Username);
+        var snapshot = ToSnapshot(stats);
+
+        foreach (var player in _playerDatabase.Players)
+        {
+            var playerUsername = NormalizeChallongeUsername(player.ChallongeUsername);
+            var matches = string.Equals(playerUsername, normalized, StringComparison.OrdinalIgnoreCase)
+                          || (!string.IsNullOrWhiteSpace(normalizedStatsUser)
+                              && string.Equals(playerUsername, normalizedStatsUser, StringComparison.OrdinalIgnoreCase));
+            if (!matches)
+                continue;
+
+            player.ChallongeStats = snapshot;
+            if (string.IsNullOrWhiteSpace(player.ChallongeUsername))
+                player.ChallongeUsername = normalizedStatsUser;
+            changed = true;
+        }
+
+        if (!changed)
+            return;
+
+        _playerDatabaseDirty = true;
+        SavePlayerDatabaseIfDirty();
     }
 
     private static string BuildProfileText(string? username, ChallongeProfileStats? stats)
@@ -1821,6 +2080,94 @@ public partial class MainWindow : Window
         var wins = stats.TotalWins?.ToString() ?? "-";
         var losses = stats.TotalLosses?.ToString() ?? "-";
         return $"Challonge: {normalized} | W-L {wins}-{losses} | WR {winRate}";
+    }
+
+    private static ChallongeProfileInfo ToChallongeProfileInfo(ChallongeProfileStats stats)
+    {
+        return new ChallongeProfileInfo
+        {
+            Username = NormalizeChallongeUsername(stats.Username),
+            ProfilePageUrl = stats.ProfilePageUrl.ToString(),
+            ProfilePictureUrl = stats.ProfilePictureUrl ?? string.Empty,
+            BannerImageUrl = stats.BannerImageUrl ?? string.Empty,
+            RetrievedAtUtc = stats.RetrievedAtUtc,
+            WinRatePercent = stats.WinRatePercent,
+            TotalWins = stats.TotalWins,
+            TotalLosses = stats.TotalLosses,
+            TotalTies = stats.TotalTies,
+            TotalTournamentsParticipated = stats.TotalTournamentsParticipated,
+            FirstPlaceFinishes = stats.FirstPlaceFinishes,
+            SecondPlaceFinishes = stats.SecondPlaceFinishes,
+            ThirdPlaceFinishes = stats.ThirdPlaceFinishes,
+            TopTenFinishes = stats.TopTenFinishes
+        };
+    }
+
+    private static ChallongeProfileStats? ToChallongeProfileStats(PlayerChallongeStatsSnapshot? snapshot)
+    {
+        if (snapshot is null)
+            return null;
+
+        var username = NormalizeChallongeUsername(snapshot.Username);
+        if (string.IsNullOrWhiteSpace(username))
+            return null;
+
+        var profileUrl = Uri.TryCreate(snapshot.ProfilePageUrl, UriKind.Absolute, out var parsedProfileUrl)
+            ? parsedProfileUrl
+            : new Uri($"https://challonge.com/users/{username}");
+
+        return new ChallongeProfileStats
+        {
+            Username = username,
+            ProfilePageUrl = profileUrl,
+            ProfilePictureUrl = snapshot.ProfilePictureUrl,
+            BannerImageUrl = snapshot.BannerImageUrl,
+            RetrievedAtUtc = snapshot.RetrievedAtUtc,
+            WinRatePercent = snapshot.WinRatePercent,
+            TotalWins = snapshot.TotalWins,
+            TotalLosses = snapshot.TotalLosses,
+            TotalTies = snapshot.TotalTies,
+            TotalTournamentsParticipated = snapshot.TotalTournamentsParticipated,
+            FirstPlaceFinishes = snapshot.FirstPlaceFinishes,
+            SecondPlaceFinishes = snapshot.SecondPlaceFinishes,
+            ThirdPlaceFinishes = snapshot.ThirdPlaceFinishes,
+            TopTenFinishes = snapshot.TopTenFinishes
+        };
+    }
+
+    private static PlayerChallongeStatsSnapshot ToSnapshot(ChallongeProfileStats stats)
+    {
+        return new PlayerChallongeStatsSnapshot
+        {
+            Username = NormalizeChallongeUsername(stats.Username),
+            ProfilePageUrl = stats.ProfilePageUrl.ToString(),
+            ProfilePictureUrl = stats.ProfilePictureUrl ?? string.Empty,
+            BannerImageUrl = stats.BannerImageUrl ?? string.Empty,
+            RetrievedAtUtc = stats.RetrievedAtUtc,
+            WinRatePercent = stats.WinRatePercent,
+            TotalWins = stats.TotalWins,
+            TotalLosses = stats.TotalLosses,
+            TotalTies = stats.TotalTies,
+            TotalTournamentsParticipated = stats.TotalTournamentsParticipated,
+            FirstPlaceFinishes = stats.FirstPlaceFinishes,
+            SecondPlaceFinishes = stats.SecondPlaceFinishes,
+            ThirdPlaceFinishes = stats.ThirdPlaceFinishes,
+            TopTenFinishes = stats.TopTenFinishes
+        };
+    }
+
+    private ChallongeProfileStats? TryGetCachedProfileStats(string? username)
+    {
+        var normalized = NormalizeChallongeUsername(username);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return null;
+
+        if (_challongeProfileStatsCache.TryGetValue(normalized, out var cached))
+            return cached;
+
+        var mapped = _playerDatabase.Players.FirstOrDefault(player =>
+            string.Equals(NormalizeChallongeUsername(player.ChallongeUsername), normalized, StringComparison.OrdinalIgnoreCase));
+        return ToChallongeProfileStats(mapped?.ChallongeStats);
     }
 
     private static CountryInfo CreateUnknownCountry()
@@ -1913,6 +2260,55 @@ public partial class MainWindow : Window
             configCountries.Insert(0, CreateUnknownCountry());
 
         return configCountries;
+    }
+
+    private List<CharacterCatalogSetting> GetConfiguredCharacterCatalog()
+    {
+        if (_settings.CharacterCatalog is { Count: > 0 })
+        {
+            return _settings.CharacterCatalog
+                .Select(entry => new CharacterCatalogSetting
+                {
+                    Name = (entry.Name ?? string.Empty).Trim(),
+                    SpritePath = (entry.SpritePath ?? string.Empty).Trim()
+                })
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.Name))
+                .GroupBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        return BuildDefaultCharacterCatalog();
+    }
+
+    private static List<CharacterCatalogSetting> BuildDefaultCharacterCatalog()
+    {
+        if (!Directory.Exists(DefaultCharacterSplashartFolder))
+            return new List<CharacterCatalogSetting>();
+
+        var supportedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".webp",
+            ".bmp"
+        };
+
+        return Directory
+            .EnumerateFiles(DefaultCharacterSplashartFolder)
+            .Where(path => supportedExtensions.Contains(Path.GetExtension(path)))
+            .Select(path => new CharacterCatalogSetting
+            {
+                Name = Path.GetFileNameWithoutExtension(path),
+                SpritePath = path
+            })
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Name))
+            .GroupBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private void ReloadCountriesFromSettings()
@@ -2091,13 +2487,25 @@ public partial class MainWindow : Window
             P1Country = _settings.MapP1Country is null ? config.Overlay.P1Country : _settings.MapP1Country.Trim(),
             P1Flag = _settings.MapP1Flag is null ? config.Overlay.P1Flag : _settings.MapP1Flag.Trim(),
             P1Score = _settings.MapP1Score is null ? config.Overlay.P1Score : _settings.MapP1Score.Trim(),
+            P1ChallongeProfileImage = _settings.MapP1ChallongeProfileImage is null ? config.Overlay.P1ChallongeProfileImage : _settings.MapP1ChallongeProfileImage.Trim(),
+            P1ChallongeBannerImage = _settings.MapP1ChallongeBannerImage is null ? config.Overlay.P1ChallongeBannerImage : _settings.MapP1ChallongeBannerImage.Trim(),
+            P1ChallongeStatsText = _settings.MapP1ChallongeStatsText is null ? config.Overlay.P1ChallongeStatsText : _settings.MapP1ChallongeStatsText.Trim(),
+            P1CharacterSprite = _settings.MapP1CharacterSprite is null ? config.Overlay.P1CharacterSprite : _settings.MapP1CharacterSprite.Trim(),
             P2Name = _settings.MapP2Name is null ? config.Overlay.P2Name : _settings.MapP2Name.Trim(),
             P2Team = _settings.MapP2Team is null ? config.Overlay.P2Team : _settings.MapP2Team.Trim(),
             P2Country = _settings.MapP2Country is null ? config.Overlay.P2Country : _settings.MapP2Country.Trim(),
             P2Flag = _settings.MapP2Flag is null ? config.Overlay.P2Flag : _settings.MapP2Flag.Trim(),
             P2Score = _settings.MapP2Score is null ? config.Overlay.P2Score : _settings.MapP2Score.Trim(),
+            P2ChallongeProfileImage = _settings.MapP2ChallongeProfileImage is null ? config.Overlay.P2ChallongeProfileImage : _settings.MapP2ChallongeProfileImage.Trim(),
+            P2ChallongeBannerImage = _settings.MapP2ChallongeBannerImage is null ? config.Overlay.P2ChallongeBannerImage : _settings.MapP2ChallongeBannerImage.Trim(),
+            P2ChallongeStatsText = _settings.MapP2ChallongeStatsText is null ? config.Overlay.P2ChallongeStatsText : _settings.MapP2ChallongeStatsText.Trim(),
+            P2CharacterSprite = _settings.MapP2CharacterSprite is null ? config.Overlay.P2CharacterSprite : _settings.MapP2CharacterSprite.Trim(),
             RoundLabel = _settings.MapRoundLabel is null ? config.Overlay.RoundLabel : _settings.MapRoundLabel.Trim(),
-            SetType = _settings.MapSetType is null ? config.Overlay.SetType : _settings.MapSetType.Trim()
+            SetType = _settings.MapSetType is null ? config.Overlay.SetType : _settings.MapSetType.Trim(),
+            ChallongeDefaultProfileImagePath = _settings.ChallongeDefaultProfileImagePath is null ? config.Overlay.ChallongeDefaultProfileImagePath : _settings.ChallongeDefaultProfileImagePath.Trim(),
+            ChallongeDefaultBannerImagePath = _settings.ChallongeDefaultBannerImagePath is null ? config.Overlay.ChallongeDefaultBannerImagePath : _settings.ChallongeDefaultBannerImagePath.Trim(),
+            ChallongeDefaultStatsText = _settings.ChallongeDefaultStatsText is null ? config.Overlay.ChallongeDefaultStatsText : _settings.ChallongeDefaultStatsText.Trim(),
+            ChallongeStatsTemplate = _settings.ChallongeStatsTemplate is null ? config.Overlay.ChallongeStatsTemplate : _settings.ChallongeStatsTemplate
         };
         var metadataCountries = new Dictionary<CountryId, CountryInfo>(config.Metadata.Countries);
         foreach (var country in GetConfiguredCountries())
@@ -2108,10 +2516,17 @@ public partial class MainWindow : Window
 
         if (!metadataCountries.ContainsKey(CountryId.Unknown))
             metadataCountries[CountryId.Unknown] = CreateUnknownCountry();
+        var characterSprites = GetConfiguredCharacterCatalog()
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Name))
+            .ToDictionary(
+                entry => entry.Name.Trim(),
+                entry => (entry.SpritePath ?? string.Empty).Trim(),
+                StringComparer.OrdinalIgnoreCase);
         var metadata = new OverlayMetadata
         {
             Countries = metadataCountries,
-            Characters = config.Metadata.Characters
+            Characters = config.Metadata.Characters,
+            CharacterSpritesByName = characterSprites
         };
 
         return config with
@@ -2476,18 +2891,32 @@ public partial class MainWindow : Window
         AddField("p1_country", "P1 Country Source", FieldValue(_settings.MapP1Country, config.Overlay.P1Country));
         AddField("p1_flag", "P1 Flag Source", FieldValue(_settings.MapP1Flag, config.Overlay.P1Flag));
         AddField("p1_score", "P1 Score Source", FieldValue(_settings.MapP1Score, config.Overlay.P1Score));
+        AddField("p1_challonge_profile_image", "P1 Challonge Profile Image", FieldValue(_settings.MapP1ChallongeProfileImage, config.Overlay.P1ChallongeProfileImage));
+        AddField("p1_challonge_banner_image", "P1 Challonge Banner Image", FieldValue(_settings.MapP1ChallongeBannerImage, config.Overlay.P1ChallongeBannerImage));
+        AddField("p1_challonge_stats_text", "P1 Challonge Stats Text", FieldValue(_settings.MapP1ChallongeStatsText, config.Overlay.P1ChallongeStatsText));
+        AddField("p1_character_sprite", "P1 Character Sprite", FieldValue(_settings.MapP1CharacterSprite, config.Overlay.P1CharacterSprite));
         AddField("p2_name", "P2 Name Source", FieldValue(_settings.MapP2Name, config.Overlay.P2Name));
         AddField("p2_team", "P2 Team Source", FieldValue(_settings.MapP2Team, config.Overlay.P2Team));
         AddField("p2_country", "P2 Country Source", FieldValue(_settings.MapP2Country, config.Overlay.P2Country));
         AddField("p2_flag", "P2 Flag Source", FieldValue(_settings.MapP2Flag, config.Overlay.P2Flag));
         AddField("p2_score", "P2 Score Source", FieldValue(_settings.MapP2Score, config.Overlay.P2Score));
+        AddField("p2_challonge_profile_image", "P2 Challonge Profile Image", FieldValue(_settings.MapP2ChallongeProfileImage, config.Overlay.P2ChallongeProfileImage));
+        AddField("p2_challonge_banner_image", "P2 Challonge Banner Image", FieldValue(_settings.MapP2ChallongeBannerImage, config.Overlay.P2ChallongeBannerImage));
+        AddField("p2_challonge_stats_text", "P2 Challonge Stats Text", FieldValue(_settings.MapP2ChallongeStatsText, config.Overlay.P2ChallongeStatsText));
+        AddField("p2_character_sprite", "P2 Character Sprite", FieldValue(_settings.MapP2CharacterSprite, config.Overlay.P2CharacterSprite));
         AddField("round_label", "Round Label Source", FieldValue(_settings.MapRoundLabel, config.Overlay.RoundLabel));
         AddField("set_type", "Set Type Source", FieldValue(_settings.MapSetType, config.Overlay.SetType));
+        AddField("challonge_default_profile_image_path", "Default Challonge Profile Image", FieldValue(_settings.ChallongeDefaultProfileImagePath, config.Overlay.ChallongeDefaultProfileImagePath));
+        AddField("challonge_default_banner_image_path", "Default Challonge Banner Image", FieldValue(_settings.ChallongeDefaultBannerImagePath, config.Overlay.ChallongeDefaultBannerImagePath));
+        AddField("challonge_default_stats_text", "Default Challonge Stats Text", FieldValue(_settings.ChallongeDefaultStatsText, config.Overlay.ChallongeDefaultStatsText));
+        AddField("challonge_stats_template", "Challonge Stats Template", FieldValue(_settings.ChallongeStatsTemplate, config.Overlay.ChallongeStatsTemplate));
 
         var saveButton = new Button { Content = "Save", Width = 88, Margin = new Thickness(4) };
         var cancelButton = new Button { Content = "Cancel", Width = 88, Margin = new Thickness(4) };
         var resetButton = new Button { Content = "Use Defaults", Margin = new Thickness(4) };
+        var verifyButton = new Button { Content = "Verify OBS Layout", Margin = new Thickness(4) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(verifyButton);
         buttons.Children.Add(resetButton);
         buttons.Children.Add(saveButton);
         buttons.Children.Add(cancelButton);
@@ -2519,14 +2948,27 @@ public partial class MainWindow : Window
             boxes["p1_country"].Text = config.Overlay.P1Country;
             boxes["p1_flag"].Text = config.Overlay.P1Flag;
             boxes["p1_score"].Text = config.Overlay.P1Score;
+            boxes["p1_challonge_profile_image"].Text = config.Overlay.P1ChallongeProfileImage;
+            boxes["p1_challonge_banner_image"].Text = config.Overlay.P1ChallongeBannerImage;
+            boxes["p1_challonge_stats_text"].Text = config.Overlay.P1ChallongeStatsText;
+            boxes["p1_character_sprite"].Text = config.Overlay.P1CharacterSprite;
             boxes["p2_name"].Text = config.Overlay.P2Name;
             boxes["p2_team"].Text = config.Overlay.P2Team;
             boxes["p2_country"].Text = config.Overlay.P2Country;
             boxes["p2_flag"].Text = config.Overlay.P2Flag;
             boxes["p2_score"].Text = config.Overlay.P2Score;
+            boxes["p2_challonge_profile_image"].Text = config.Overlay.P2ChallongeProfileImage;
+            boxes["p2_challonge_banner_image"].Text = config.Overlay.P2ChallongeBannerImage;
+            boxes["p2_challonge_stats_text"].Text = config.Overlay.P2ChallongeStatsText;
+            boxes["p2_character_sprite"].Text = config.Overlay.P2CharacterSprite;
             boxes["round_label"].Text = config.Overlay.RoundLabel;
             boxes["set_type"].Text = config.Overlay.SetType;
+            boxes["challonge_default_profile_image_path"].Text = config.Overlay.ChallongeDefaultProfileImagePath;
+            boxes["challonge_default_banner_image_path"].Text = config.Overlay.ChallongeDefaultBannerImagePath;
+            boxes["challonge_default_stats_text"].Text = config.Overlay.ChallongeDefaultStatsText;
+            boxes["challonge_stats_template"].Text = config.Overlay.ChallongeStatsTemplate;
         };
+        verifyButton.Click += async (_, _) => await VerifyObsLayoutAsync();
         saveButton.Click += (_, _) => window.DialogResult = true;
         cancelButton.Click += (_, _) => window.DialogResult = false;
 
@@ -2546,16 +2988,161 @@ public partial class MainWindow : Window
         _settings.MapP1Country = boxes["p1_country"].Text.Trim();
         _settings.MapP1Flag = boxes["p1_flag"].Text.Trim();
         _settings.MapP1Score = boxes["p1_score"].Text.Trim();
+        _settings.MapP1ChallongeProfileImage = boxes["p1_challonge_profile_image"].Text.Trim();
+        _settings.MapP1ChallongeBannerImage = boxes["p1_challonge_banner_image"].Text.Trim();
+        _settings.MapP1ChallongeStatsText = boxes["p1_challonge_stats_text"].Text.Trim();
+        _settings.MapP1CharacterSprite = boxes["p1_character_sprite"].Text.Trim();
         _settings.MapP2Name = boxes["p2_name"].Text.Trim();
         _settings.MapP2Team = boxes["p2_team"].Text.Trim();
         _settings.MapP2Country = boxes["p2_country"].Text.Trim();
         _settings.MapP2Flag = boxes["p2_flag"].Text.Trim();
         _settings.MapP2Score = boxes["p2_score"].Text.Trim();
+        _settings.MapP2ChallongeProfileImage = boxes["p2_challonge_profile_image"].Text.Trim();
+        _settings.MapP2ChallongeBannerImage = boxes["p2_challonge_banner_image"].Text.Trim();
+        _settings.MapP2ChallongeStatsText = boxes["p2_challonge_stats_text"].Text.Trim();
+        _settings.MapP2CharacterSprite = boxes["p2_character_sprite"].Text.Trim();
         _settings.MapRoundLabel = boxes["round_label"].Text.Trim();
         _settings.MapSetType = boxes["set_type"].Text.Trim();
+        _settings.ChallongeDefaultProfileImagePath = boxes["challonge_default_profile_image_path"].Text.Trim();
+        _settings.ChallongeDefaultBannerImagePath = boxes["challonge_default_banner_image_path"].Text.Trim();
+        _settings.ChallongeDefaultStatsText = boxes["challonge_default_stats_text"].Text.Trim();
+        _settings.ChallongeStatsTemplate = boxes["challonge_stats_template"].Text;
         PersistSettings();
         RebuildHostFromSettings();
         RenderSceneButtons();
+        return true;
+    }
+
+    private bool ShowCharacterCatalogDialog()
+    {
+        var entries = GetConfiguredCharacterCatalog()
+            .Select(entry => new CharacterCatalogSetting
+            {
+                Name = entry.Name,
+                SpritePath = entry.SpritePath
+            })
+            .ToList();
+
+        var panel = new StackPanel { Margin = new Thickness(14) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Character catalog entries drive player assignment and first-character sprite overlays.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brushes.LightGray,
+            Margin = new Thickness(0, 0, 0, 8)
+        });
+
+        var rowsPanel = new StackPanel();
+        var scroll = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Height = 380,
+            Content = rowsPanel
+        };
+        panel.Children.Add(scroll);
+
+        void RenderRows()
+        {
+            rowsPanel.Children.Clear();
+            for (var i = 0; i < entries.Count; i++)
+            {
+                var index = i;
+                var row = new Grid { Margin = new Thickness(0, 0, 0, 4) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var nameBox = new TextBox { Text = entries[index].Name, Margin = new Thickness(0, 0, 6, 0) };
+                nameBox.TextChanged += (_, _) => entries[index].Name = nameBox.Text;
+
+                var spriteBox = new TextBox { Text = entries[index].SpritePath, Margin = new Thickness(0, 0, 6, 0) };
+                spriteBox.TextChanged += (_, _) => entries[index].SpritePath = spriteBox.Text;
+
+                var removeButton = new Button { Content = "Remove", Padding = new Thickness(8, 4, 8, 4) };
+                removeButton.Click += (_, _) =>
+                {
+                    entries.RemoveAt(index);
+                    RenderRows();
+                };
+
+                Grid.SetColumn(nameBox, 0);
+                Grid.SetColumn(spriteBox, 1);
+                Grid.SetColumn(removeButton, 2);
+                row.Children.Add(nameBox);
+                row.Children.Add(spriteBox);
+                row.Children.Add(removeButton);
+                rowsPanel.Children.Add(row);
+            }
+        }
+
+        RenderRows();
+
+        var addButton = new Button { Content = "Add Character", Width = 120, Margin = new Thickness(0, 6, 0, 8) };
+        addButton.Click += (_, _) =>
+        {
+            entries.Add(new CharacterCatalogSetting());
+            RenderRows();
+        };
+        var defaultsButton = new Button { Content = "Use default list", Width = 130, Margin = new Thickness(8, 6, 0, 8) };
+        defaultsButton.Click += (_, _) =>
+        {
+            var confirm = MessageBox.Show(
+                "This will overwrite the current character catalog list with the default splashart folder files. Continue?",
+                "Overwrite Character Catalog",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.Yes)
+                return;
+
+            entries.Clear();
+            entries.AddRange(BuildDefaultCharacterCatalog());
+            RenderRows();
+        };
+        var topButtons = new StackPanel { Orientation = Orientation.Horizontal };
+        topButtons.Children.Add(addButton);
+        topButtons.Children.Add(defaultsButton);
+        panel.Children.Add(topButtons);
+
+        var saveButton = new Button { Content = "Save", Width = 88, Margin = new Thickness(4) };
+        var cancelButton = new Button { Content = "Cancel", Width = 88, Margin = new Thickness(4) };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(saveButton);
+        buttons.Children.Add(cancelButton);
+        panel.Children.Add(buttons);
+
+        var window = new Window
+        {
+            Owner = this,
+            Title = "Character Catalog",
+            Content = panel,
+            Width = 720,
+            Height = 560,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            Background = (SolidColorBrush)new BrushConverter().ConvertFromString("#101315")!,
+            Foreground = Brushes.White
+        };
+
+        saveButton.Click += (_, _) => window.DialogResult = true;
+        cancelButton.Click += (_, _) => window.DialogResult = false;
+
+        if (window.ShowDialog() != true)
+            return false;
+
+        _settings.CharacterCatalog = entries
+            .Select(entry => new CharacterCatalogSetting
+            {
+                Name = (entry.Name ?? string.Empty).Trim(),
+                SpritePath = (entry.SpritePath ?? string.Empty).Trim()
+            })
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Name))
+            .GroupBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        PersistSettings();
+        ShowActionToast("Character catalog updated.", ToastKind.Success);
         return true;
     }
 
@@ -2621,11 +3208,28 @@ public partial class MainWindow : Window
 
     private void RebuildHostFromSettings()
     {
+        var previousObs = _host.GetContext().Obs;
+        var wasConnected = previousObs.IsConnectedAsync().GetAwaiter().GetResult();
         var currentMatch = _host.State.CurrentMatch;
         _host = new AutomationHost(BuildRuntimeConfig(), _logger);
         _host.State.SetCurrentMatch(currentMatch);
         RenderSceneButtons();
         SyncScoreDisplaysFromState();
+
+        if (wasConnected)
+        {
+            _ = Dispatcher.InvokeAsync(async () =>
+            {
+                try
+                {
+                    await _host.ConnectAsync(CancellationToken.None);
+                }
+                catch
+                {
+                    // Keep silent: explicit connect flow shows actionable status.
+                }
+            });
+        }
     }
 
     private bool ShowChallongeCredentialsDialog()

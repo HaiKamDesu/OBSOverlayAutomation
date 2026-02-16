@@ -96,6 +96,15 @@ public sealed class ObsGateway : IObsGateway
         return result.Ok;
     }
 
+    public async Task<bool> SetMediaSourceAsync(string inputName, string source, CancellationToken cancellationToken)
+    {
+        var result = await _controller.SetMediaSourceAsync(inputName, source, cancellationToken);
+        if (!result.Ok)
+            _logger.Warn($"OBS: Media source update failed for '{inputName}': {result.Message}");
+
+        return result.Ok;
+    }
+
     public async Task<bool> SetVisibilityAsync(string sceneName, string sceneItemName, bool visible, CancellationToken cancellationToken)
     {
         var result = await _controller.SetVisibilityAsync(sceneName, sceneItemName, visible, cancellationToken);
@@ -103,5 +112,29 @@ public sealed class ObsGateway : IObsGateway
             _logger.Warn($"OBS: Visibility update failed: {result.Message}");
 
         return result.Ok;
+    }
+
+    public async Task<bool> GetInputExistsAsync(string inputName, CancellationToken cancellationToken)
+    {
+        var result = await _controller.GetInputExistsAsync(inputName, cancellationToken);
+        if (!result.Ok)
+        {
+            _logger.Warn($"OBS: Input exists lookup failed for '{inputName}': {result.Message}");
+            return false;
+        }
+
+        return result.Value;
+    }
+
+    public async Task<IReadOnlyList<string>> GetSceneNamesAsync(CancellationToken cancellationToken)
+    {
+        var result = await _controller.GetSceneNamesAsync(cancellationToken);
+        if (!result.Ok)
+        {
+            _logger.Warn($"OBS: Scene list lookup failed: {result.Message}");
+            return Array.Empty<string>();
+        }
+
+        return result.Value ?? Array.Empty<string>();
     }
 }

@@ -288,6 +288,7 @@
                         <Separator />
                         <MenuItem Header="Round Naming Rules" Click="RoundNamingRulesButton_Click" />
                         <MenuItem Header="Manage Countries" Click="ManageCountriesButton_Click" />
+                        <MenuItem Header="Manage Character Catalog" Click="ManageCharacterCatalogButton_Click" />
                         <MenuItem Header="Set settings folder" Click="SettingsButton_Click" />
                         <MenuItem Header="Manage Player Database" Click="OpenPlayerDatabaseButton_Click" />
                     </ContextMenu>

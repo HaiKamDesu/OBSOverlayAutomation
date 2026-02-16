@@ -21,15 +21,28 @@ public sealed class UserSettings
     public string? MapP1Country { get; set; }
     public string? MapP1Flag { get; set; }
     public string? MapP1Score { get; set; }
+    public string? MapP1ChallongeProfileImage { get; set; }
+    public string? MapP1ChallongeBannerImage { get; set; }
+    public string? MapP1ChallongeStatsText { get; set; }
+    public string? MapP1CharacterSprite { get; set; }
     public string? MapP2Name { get; set; }
     public string? MapP2Team { get; set; }
     public string? MapP2Country { get; set; }
     public string? MapP2Flag { get; set; }
     public string? MapP2Score { get; set; }
+    public string? MapP2ChallongeProfileImage { get; set; }
+    public string? MapP2ChallongeBannerImage { get; set; }
+    public string? MapP2ChallongeStatsText { get; set; }
+    public string? MapP2CharacterSprite { get; set; }
     public string? MapRoundLabel { get; set; }
     public string? MapSetType { get; set; }
+    public string? ChallongeDefaultProfileImagePath { get; set; }
+    public string? ChallongeDefaultBannerImagePath { get; set; }
+    public string? ChallongeDefaultStatsText { get; set; }
+    public string? ChallongeStatsTemplate { get; set; }
     public bool MoveToNextOpenMatchOnCommitToChallonge { get; set; } = true;
     public List<CountrySetting> Countries { get; set; } = new();
+    public List<CharacterCatalogSetting> CharacterCatalog { get; set; } = new();
     public List<RoundNamingRuleSetting> RoundNamingRules { get; set; } = new();
     public List<SceneButtonSetting> SceneButtons { get; set; } = new();
 }
@@ -45,6 +58,12 @@ public sealed class CountrySetting
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string FlagPath { get; set; } = string.Empty;
+}
+
+public sealed class CharacterCatalogSetting
+{
+    public string Name { get; set; } = string.Empty;
+    public string SpritePath { get; set; } = string.Empty;
 }
 
 public sealed class RoundNamingRuleSetting

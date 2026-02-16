@@ -14,13 +14,22 @@ public partial class PlayerEditWindow : Window
 {
     public PlayerProfile? Result { get; private set; }
     private readonly ObservableCollection<CountryInfo> _countries = new();
+    private readonly List<CharacterCatalogSetting> _characterCatalog;
     private readonly ChallongeProfileScraperService _profileScraper = new(new HttpClient());
     private readonly string _initialChallongeUsername;
     private PlayerChallongeStatsSnapshot? _currentStats;
 
-    public PlayerEditWindow(IReadOnlyList<CountryInfo> countries, PlayerProfile? profile)
+    public PlayerEditWindow(IReadOnlyList<CountryInfo> countries, IReadOnlyList<CharacterCatalogSetting> characterCatalog, PlayerProfile? profile)
     {
         InitializeComponent();
+        _characterCatalog = characterCatalog
+            .Select(entry => new CharacterCatalogSetting
+            {
+                Name = (entry.Name ?? string.Empty).Trim(),
+                SpritePath = (entry.SpritePath ?? string.Empty).Trim()
+            })
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Name))
+            .ToList();
 
         foreach (var entry in countries.OrderBy(x => x.Acronym, StringComparer.OrdinalIgnoreCase))
             _countries.Add(entry);
@@ -47,6 +56,9 @@ public partial class PlayerEditWindow : Window
         }
 
         _initialChallongeUsername = NormalizeChallongeUsername(ChallongeUsernameBox.Text);
+        PickCharactersButton.IsEnabled = _characterCatalog.Count > 0;
+        if (_characterCatalog.Count == 0)
+            PickCharactersButton.ToolTip = "Character catalog is empty. Add entries from Settings -> Manage Character Catalog.";
         UpdateStatsDisplay();
     }
 
@@ -202,6 +214,101 @@ public partial class PlayerEditWindow : Window
 
         StatsSummaryText.Text = $"Stats for {username}: W-L {FormatInt(_currentStats.TotalWins)}-{FormatInt(_currentStats.TotalLosses)}, WR {FormatPercent(_currentStats.WinRatePercent)}";
         StatsUpdatedText.Text = $"Last updated: {_currentStats.RetrievedAtUtc.LocalDateTime:yyyy-MM-dd HH:mm:ss}";
+    }
+
+    private void PickCharactersButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_characterCatalog.Count == 0)
+        {
+            MessageBox.Show("Character catalog is empty. Add entries from Settings -> Manage Character Catalog.", "Character Catalog", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var selectedCharacters = new ObservableCollection<string>(
+            (CharactersBox.Text ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+
+        var panel = new StackPanel { Margin = new Thickness(14) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Select character(s) for this player",
+            Foreground = Brushes.LightGray,
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+
+        var pickerRow = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+        pickerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        pickerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var picker = new ComboBox
+        {
+            MinWidth = 220,
+            IsEditable = true,
+            IsTextSearchEnabled = true
+        };
+        foreach (var entry in _characterCatalog.OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase))
+            picker.Items.Add(entry.Name);
+        var addButton = new Button { Content = "Add", Padding = new Thickness(10, 4, 10, 4) };
+        Grid.SetColumn(addButton, 1);
+        pickerRow.Children.Add(picker);
+        pickerRow.Children.Add(addButton);
+        panel.Children.Add(pickerRow);
+
+        var selectedList = new ListBox { Height = 180, ItemsSource = selectedCharacters, Margin = new Thickness(0, 0, 0, 8) };
+        panel.Children.Add(selectedList);
+
+        var actionRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
+        var removeButton = new Button { Content = "Remove Selected", Padding = new Thickness(10, 4, 10, 4) };
+        var clearButton = new Button { Content = "Clear All", Padding = new Thickness(10, 4, 10, 4) };
+        actionRow.Children.Add(removeButton);
+        actionRow.Children.Add(clearButton);
+        panel.Children.Add(actionRow);
+
+        var saveButton = new Button { Content = "Save", Width = 88, Margin = new Thickness(4) };
+        var cancelButton = new Button { Content = "Cancel", Width = 88, Margin = new Thickness(4) };
+        var buttonRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttonRow.Children.Add(saveButton);
+        buttonRow.Children.Add(cancelButton);
+        panel.Children.Add(buttonRow);
+
+        var window = new Window
+        {
+            Owner = this,
+            Title = "Assign Characters",
+            Content = panel,
+            Width = 420,
+            Height = 460,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            Background = (SolidColorBrush)new BrushConverter().ConvertFromString("#101315")!,
+            Foreground = Brushes.White
+        };
+
+        addButton.Click += (_, _) =>
+        {
+            var choice = picker.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(choice))
+                return;
+
+            if (!selectedCharacters.Any(existing => string.Equals(existing, choice, StringComparison.OrdinalIgnoreCase)))
+                selectedCharacters.Add(choice);
+
+            picker.Text = string.Empty;
+        };
+        removeButton.Click += (_, _) =>
+        {
+            if (selectedList.SelectedItem is string selected)
+                selectedCharacters.Remove(selected);
+        };
+        clearButton.Click += (_, _) => selectedCharacters.Clear();
+        saveButton.Click += (_, _) => window.DialogResult = true;
+        cancelButton.Click += (_, _) => window.DialogResult = false;
+
+        if (window.ShowDialog() != true)
+            return;
+
+        CharactersBox.Text = string.Join(", ", selectedCharacters);
     }
 
     private static PlayerChallongeStatsSnapshot ToSnapshot(ChallongeProfileStats stats)

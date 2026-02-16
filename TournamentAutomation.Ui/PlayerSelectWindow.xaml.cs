@@ -15,6 +15,7 @@ public partial class PlayerSelectWindow : Window
     private readonly PlayerDatabase _database;
     private readonly string _databasePath;
     private readonly IReadOnlyList<CountryInfo> _countries;
+    private readonly IReadOnlyList<CharacterCatalogSetting> _characterCatalog;
     private readonly bool _doubleClickSelectsPlayer;
     private readonly ICollectionView _playersView;
     private string _activeSortProperty = "Name";
@@ -25,6 +26,7 @@ public partial class PlayerSelectWindow : Window
         PlayerDatabase database,
         string databasePath,
         IReadOnlyList<CountryInfo> countries,
+        IReadOnlyList<CharacterCatalogSetting> characterCatalog,
         bool doubleClickSelectsPlayer = false)
     {
         InitializeComponent();
@@ -32,6 +34,7 @@ public partial class PlayerSelectWindow : Window
         _database = database;
         _databasePath = databasePath;
         _countries = countries;
+        _characterCatalog = characterCatalog;
         _doubleClickSelectsPlayer = doubleClickSelectsPlayer;
         _playersView = CollectionViewSource.GetDefaultView(players);
         _playersView.Filter = PlayerMatchesSearch;
@@ -66,7 +69,7 @@ public partial class PlayerSelectWindow : Window
 
     private void Add_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new PlayerEditWindow(_countries, null);
+        var dialog = new PlayerEditWindow(_countries, _characterCatalog, null);
         dialog.Owner = this;
         if (dialog.ShowDialog() == true && dialog.Result is not null)
             AddProfile(dialog.Result);
@@ -126,7 +129,7 @@ public partial class PlayerSelectWindow : Window
 
     private void EditSelectedProfile(PlayerProfile selected)
     {
-        var dialog = new PlayerEditWindow(_countries, selected);
+        var dialog = new PlayerEditWindow(_countries, _characterCatalog, selected);
         dialog.Owner = this;
         if (dialog.ShowDialog() == true && dialog.Result is not null)
         {

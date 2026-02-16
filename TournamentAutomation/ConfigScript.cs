@@ -38,7 +38,19 @@ public static class ConfigScript
                 P2Flag = "P2 Flag",
                 P2Score = "P2 Score",
                 RoundLabel = "Middle Title",
-                SetType = "Middle Set Length"
+                SetType = "Middle Set Length",
+                P1ChallongeProfileImage = "",
+                P1ChallongeBannerImage = "",
+                P1ChallongeStatsText = "",
+                P1CharacterSprite = "",
+                P2ChallongeProfileImage = "",
+                P2ChallongeBannerImage = "",
+                P2ChallongeStatsText = "",
+                P2CharacterSprite = "",
+                ChallongeDefaultProfileImagePath = "",
+                ChallongeDefaultBannerImagePath = "",
+                ChallongeDefaultStatsText = "",
+                ChallongeStatsTemplate = "W-L {wins}-{losses} | WR {win_rate}%"
             },
             Metadata = new OverlayMetadata
             {
@@ -124,7 +136,8 @@ public static class ConfigScript
             Name = name,
             Team = team,
             Country = country,
-            Characters = characters.Length == 0 ? Array.Empty<FGCharacterId>() : characters
+            Characters = characters.Length == 0 ? Array.Empty<FGCharacterId>() : characters,
+            Character = characters.Length == 0 ? string.Empty : string.Join(", ", characters)
         };
     }
 

@@ -212,6 +212,11 @@
 
                             <Label Content="Characters" Margin="0,12,0,6" />
                             <TextBox x:Name="CharactersBox" />
+                            <Button x:Name="PickCharactersButton"
+                                    Content="Pick From Catalog"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Margin="0,8,0,0"
+                                    Click="PickCharactersButton_Click" />
 
                             <Label Content="Aliases" Margin="0,12,0,6" />
                             <TextBox x:Name="AliasesBox"

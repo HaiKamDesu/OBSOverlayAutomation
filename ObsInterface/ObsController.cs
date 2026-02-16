@@ -143,6 +143,27 @@ public sealed class ObsController
         return Result<bool>.Success(input.Value is not null);
     }
 
+    public async Task<Result<IReadOnlyList<string>>> GetSceneNamesAsync(CancellationToken cancellationToken = default)
+    {
+        var precheck = EnsureConnected<IReadOnlyList<string>>();
+        if (!precheck.Ok)
+            return precheck;
+
+        try
+        {
+            var names = await WithTimeout(ct => _obs.GetSceneNamesAsync(ct), cancellationToken).ConfigureAwait(false);
+            return Result<IReadOnlyList<string>>.Success(names);
+        }
+        catch (OperationCanceledException ex)
+        {
+            return Fail<IReadOnlyList<string>>(ResultCodes.Timeout, "Scene list lookup timed out.", ex);
+        }
+        catch (Exception ex)
+        {
+            return Fail<IReadOnlyList<string>>(ResultCodes.ObsError, "Failed to load scene list.", ex);
+        }
+    }
+
     public async Task<Result<string>> GetInputKindAsync(string inputName, CancellationToken cancellationToken = default)
     {
         var input = await RequireInputAsync(inputName, cancellationToken).ConfigureAwait(false);
@@ -239,9 +260,6 @@ public sealed class ObsController
 
     public async Task<Result<bool>> SetImageFileAsync(string inputName, string filePath, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
-            return Fail<bool>(ResultCodes.InvalidArgument, "filePath is required.");
-
         var settingsResult = await GetInputSettingsAsync(inputName, cancellationToken).ConfigureAwait(false);
         if (!settingsResult.Ok)
             return Result<bool>.Fail(settingsResult.Code, settingsResult.Message, settingsResult.Exception);
@@ -251,7 +269,64 @@ public sealed class ObsController
         if (key is null)
             return Fail<bool>(ResultCodes.TypeMismatch, $"Input '{inputName}' does not support a recognized image path setting key.");
 
-        var patch = new JObject { [key] = filePath };
+        var patch = new JObject { [key] = filePath ?? string.Empty };
+        return await SetInputSettingsAsync(inputName, patch, true, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<Result<bool>> SetMediaSourceAsync(string inputName, string source, CancellationToken cancellationToken = default)
+    {
+        var kindResult = await GetInputKindAsync(inputName, cancellationToken).ConfigureAwait(false);
+        if (!kindResult.Ok)
+            return Result<bool>.Fail(kindResult.Code, kindResult.Message, kindResult.Exception);
+
+        var inputKind = kindResult.Value ?? string.Empty;
+        var settingsResult = await GetInputSettingsAsync(inputName, cancellationToken).ConfigureAwait(false);
+        if (!settingsResult.Ok)
+            return Result<bool>.Fail(settingsResult.Code, settingsResult.Message, settingsResult.Exception);
+
+        var settings = settingsResult.Value!;
+        var value = source ?? string.Empty;
+        var isWebUrl = Uri.TryCreate(value, UriKind.Absolute, out var sourceUri)
+            && (sourceUri.Scheme == Uri.UriSchemeHttp || sourceUri.Scheme == Uri.UriSchemeHttps);
+        var isBrowserSource = inputKind.Contains("browser", StringComparison.OrdinalIgnoreCase);
+
+        if (isBrowserSource)
+        {
+            // Browser sources need explicit URL mode when switching away from local file mode.
+            var browserPatch = new JObject
+            {
+                ["url"] = value,
+                ["is_local_file"] = false
+            };
+
+            if (settings.ContainsKey("local_file"))
+                browserPatch["local_file"] = string.Empty;
+
+            return await SetInputSettingsAsync(inputName, browserPatch, true, cancellationToken).ConfigureAwait(false);
+        }
+
+        var key = settings.ContainsKey("url")
+            ? "url"
+            : settings.ContainsKey("file")
+                ? "file"
+                : settings.ContainsKey("local_file")
+                    ? "local_file"
+                    : null;
+        if (key is null)
+            return Fail<bool>(ResultCodes.TypeMismatch, $"Input '{inputName}' does not support 'url', 'file', or 'local_file' setting keys.");
+
+        if (isWebUrl && key != "url")
+            return Fail<bool>(ResultCodes.TypeMismatch, $"Input '{inputName}' does not support URL media; use a browser source for HTTP/HTTPS URLs.");
+
+        if (key == "url"
+            && !string.IsNullOrWhiteSpace(value)
+            && Path.IsPathRooted(value)
+            && Uri.TryCreate(value, UriKind.Absolute, out var fileUri))
+        {
+            value = fileUri.AbsoluteUri;
+        }
+
+        var patch = new JObject { [key] = value };
         return await SetInputSettingsAsync(inputName, patch, true, cancellationToken).ConfigureAwait(false);
     }
 

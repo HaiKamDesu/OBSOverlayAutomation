@@ -52,6 +52,21 @@ public sealed class OverlayUpdater : IOverlayUpdater
         if (!string.IsNullOrWhiteSpace(p2FlagPath))
             ok &= await SetImageIfMappedAsync(_mapping.P2Flag, p2FlagPath, cancellationToken);
 
+        ok &= await ApplyChallongeProfileAsync(
+            match.Player1,
+            _mapping.P1ChallongeProfileImage,
+            _mapping.P1ChallongeBannerImage,
+            _mapping.P1ChallongeStatsText,
+            cancellationToken);
+        ok &= await ApplyChallongeProfileAsync(
+            match.Player2,
+            _mapping.P2ChallongeProfileImage,
+            _mapping.P2ChallongeBannerImage,
+            _mapping.P2ChallongeStatsText,
+            cancellationToken);
+        ok &= await ApplyCharacterSpriteAsync(match.Player1, _mapping.P1CharacterSprite, cancellationToken);
+        ok &= await ApplyCharacterSpriteAsync(match.Player2, _mapping.P2CharacterSprite, cancellationToken);
+
         if (!ok)
             _logger.Warn("One or more player fields failed to update.");
 
@@ -96,5 +111,122 @@ public sealed class OverlayUpdater : IOverlayUpdater
             return true;
 
         return await _obs.SetImageFileAsync(inputName, filePath, cancellationToken);
+    }
+
+    private async Task<bool> ApplyChallongeProfileAsync(
+        PlayerInfo player,
+        string profileImageInput,
+        string bannerImageInput,
+        string statsTextInput,
+        CancellationToken cancellationToken)
+    {
+        var profileImageSource = ResolvePreferredMediaSource(
+            player.ChallongeProfile?.ProfilePictureUrl,
+            _mapping.ChallongeDefaultProfileImagePath);
+        var bannerImageSource = ResolvePreferredMediaSource(
+            player.ChallongeProfile?.BannerImageUrl,
+            _mapping.ChallongeDefaultBannerImagePath);
+        var statsText = BuildStatsText(player);
+
+        var ok = true;
+        ok &= await SetMediaIfMappedAsync(profileImageInput, profileImageSource, cancellationToken);
+        ok &= await SetMediaIfMappedAsync(bannerImageInput, bannerImageSource, cancellationToken);
+        ok &= await SetTextIfMappedAsync(statsTextInput, statsText, cancellationToken);
+        return ok;
+    }
+
+    private async Task<bool> ApplyCharacterSpriteAsync(
+        PlayerInfo player,
+        string characterSpriteInput,
+        CancellationToken cancellationToken)
+    {
+        var firstCharacter = ResolvePrimaryCharacterName(player);
+        var spritePath = _metadata.ResolveCharacterSpritePath(firstCharacter);
+        return await SetMediaIfMappedAsync(characterSpriteInput, spritePath, cancellationToken);
+    }
+
+    private async Task<bool> SetMediaIfMappedAsync(string inputName, string source, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(inputName))
+            return true;
+
+        return await _obs.SetMediaSourceAsync(inputName, source, cancellationToken);
+    }
+
+    private string BuildStatsText(PlayerInfo player)
+    {
+        var profile = player.ChallongeProfile;
+        if (profile is null)
+            return _mapping.ChallongeDefaultStatsText ?? string.Empty;
+
+        var template = string.IsNullOrWhiteSpace(_mapping.ChallongeStatsTemplate)
+            ? "W-L {wins}-{losses} | WR {win_rate}%"
+            : _mapping.ChallongeStatsTemplate;
+
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["username"] = !string.IsNullOrWhiteSpace(profile.Username) ? profile.Username : player.ChallongeUsername,
+            ["wins"] = FormatStat(profile.TotalWins),
+            ["losses"] = FormatStat(profile.TotalLosses),
+            ["ties"] = FormatStat(profile.TotalTies),
+            ["win_rate"] = profile.WinRatePercent.HasValue ? profile.WinRatePercent.Value.ToString("0.#") : "-",
+            ["tournaments"] = FormatStat(profile.TotalTournamentsParticipated),
+            ["first"] = FormatStat(profile.FirstPlaceFinishes),
+            ["second"] = FormatStat(profile.SecondPlaceFinishes),
+            ["third"] = FormatStat(profile.ThirdPlaceFinishes),
+            ["top10"] = FormatStat(profile.TopTenFinishes),
+            ["characters"] = BuildCharactersText(player),
+            ["profile_url"] = profile.ProfilePageUrl ?? string.Empty,
+            ["retrieved_at"] = profile.RetrievedAtUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+        };
+
+        var text = template;
+        foreach (var pair in values)
+            text = text.Replace($"{{{pair.Key}}}", pair.Value, StringComparison.OrdinalIgnoreCase);
+
+        return text.Replace("\\n", "\n", StringComparison.Ordinal);
+    }
+
+    private static string ResolvePreferredMediaSource(string? source, string? fallback)
+    {
+        var primary = source?.Trim() ?? string.Empty;
+        var secondary = fallback?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(primary) && string.IsNullOrWhiteSpace(secondary))
+            return string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(primary))
+            return primary;
+
+        return secondary;
+    }
+
+    private static string FormatStat(int? value) => value?.ToString() ?? "-";
+
+    private static string BuildCharactersText(PlayerInfo player)
+    {
+        if (!string.IsNullOrWhiteSpace(player.Character))
+            return player.Character;
+
+        if (player.Characters is { Count: > 0 })
+            return string.Join(", ", player.Characters);
+
+        return "-";
+    }
+
+    private static string ResolvePrimaryCharacterName(PlayerInfo player)
+    {
+        if (!string.IsNullOrWhiteSpace(player.Character))
+        {
+            var first = player.Character
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(first))
+                return first;
+        }
+
+        if (player.Characters is { Count: > 0 })
+            return player.Characters[0].ToString();
+
+        return string.Empty;
     }
 }
